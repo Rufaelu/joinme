@@ -9,7 +9,9 @@ class MapScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("JoinMe"),),
+      appBar: AppBar(title: const Text("JoinMe"),
+      backgroundColor: const Color.fromARGB(0, 233, 185, 112,),),
+
       body: FlutterMap(
         mapController: mapController,
         
