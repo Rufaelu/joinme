@@ -7,12 +7,16 @@ class Login extends StatelessWidget{
   Widget build(BuildContext context) {
     // TODO: implement build
     return MaterialApp(
+            debugShowCheckedModeBanner: false,
+
       home:Scaffold(
+        
         appBar: AppBar(
           title: Center(
             child: Image.asset('images/JoinMe.png',
             fit: BoxFit.contain,
-            height: 74,
+            height: 54,
+            width: 67,
             ),
 
             )
