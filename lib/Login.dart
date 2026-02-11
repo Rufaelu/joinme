@@ -5,34 +5,34 @@ class Login extends StatelessWidget{
 
   @override
   Widget build(BuildContext context) {
-    // TODO: implement build
     return MaterialApp(
             debugShowCheckedModeBanner: false,
 
       home:Scaffold(
         
         appBar: AppBar(
+          toolbarHeight: 200,
+          // backgroundColor: Colors.red,
           title: Center(
             child: Image.asset('images/JoinMe.png',
+            // colorBlendMode: BlendMode.difference,
             fit: BoxFit.contain,
-            height: 54,
-            width: 67,
+            height: 144,
+            width: 137,
             ),
-
             )
 
+          ),
+          body: Placeholder(
+            color: const Color.fromARGB(255, 126, 81, 81),),
 
-          )
+            
         )
       );
     
   }
 }
 
-class LoginForm extends StatelessWidget{
-@override
-  Widget build(BuildContext context) {
-    // TODO: implement build
-    return Container();
-  }
-}
+class 
+
+
