@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:joinme/Map_screen.dart';
-import 'package:joinme/Login.dart';
+import 'package:joinme/src/Screens/Map_screen.dart';
+import 'package:joinme/src/Screens/Login.dart';
 
 void main() {
   runApp(const MyApp());
@@ -14,7 +14,8 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home:Login()
+      // home:LoginScreen()
+      home:MapScreen()
     );
   }
 }

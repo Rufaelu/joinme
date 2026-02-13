@@ -22,22 +22,9 @@ class MapScreen extends StatelessWidget {
         children: [
           TileLayer(
             urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-            userAgentPackageName: 'com.example.app',
+            userAgentPackageName: 'com.example.joinme',
           ),
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: const LatLng(9.03, 38.74,),
-                width: 80,
-                height: 80,
-                child: const Icon(
-                  Icons.location_on,
-                  size: 40,
-                  color: Colors.red,
-                ),
-              ),
-            ],
-          ),
+         
         ],
       ),
     );
