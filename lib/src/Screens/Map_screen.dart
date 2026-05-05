@@ -6,14 +6,15 @@ import 'package:glassmorphism/glassmorphism.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:joinme/src/Screens/NavText.dart';
+import 'package:joinme/src/Screens/event_detail_screen.dart';
+import 'package:joinme/src/models/event.dart';
+import 'package:joinme/src/services/app_state.dart';
 
 final mapController = MapController();
 final PopupController popupController = PopupController();
 
-
 class MapScreen extends StatefulWidget {
-  final bool isDark;
-  const MapScreen({super.key, required this.isDark});
+  const MapScreen({super.key});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -21,418 +22,332 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _locationController = TextEditingController();
+  EventModel? _selectedEvent;
+  Marker? _userPin;
+  String? _locationName;
+  final Map<Marker, EventModel> _markerEvent = {};
+  List<Marker> _eventMarkers = [];
+  LatLng _mapCenter = const LatLng(9.03, 38.74);
+  double _mapZoom = 13;
 
-  Marker? userPin;
-  List<Marker> markers = [];
-  String? locationName;
-  LatLng? pinnedPoint;
+  @override
+  void initState() {
+    super.initState();
+    appState.addListener(_refreshMarkers);
+    _refreshMarkers();
+  }
 
-  /// Reverse geocode using OpenStreetMap Nominatim
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _locationController.dispose();
+    appState.removeListener(_refreshMarkers);
+    super.dispose();
+  }
+
+  void _refreshMarkers() {
+    _markerEvent.clear();
+    _eventMarkers = appState.events.map((event) {
+      late final Marker marker;
+      marker = Marker(
+        point: event.location,
+        width: 52,
+        height: 64,
+        child: GestureDetector(
+          onTap: () {
+            setState(() {
+              _selectedEvent = event;
+            });
+            popupController.togglePopup(marker);
+          },
+          child: Column(
+            children: [
+              Icon(Icons.place, size: _selectedEvent?.id == event.id ? 44 : 38, color: Color(event.category.colorValue)),
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(color: Color(event.category.colorValue), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 8)]),
+              ),
+            ],
+          ),
+        ),
+      );
+      _markerEvent[marker] = event;
+      return marker;
+    }).toList();
+
+    if (_userPin != null) {
+      _eventMarkers.add(_userPin!);
+    }
+    setState(() {});
+  }
+
   Future<void> _fetchPlaceName(LatLng point) async {
-    final url =
-        'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${point.latitude}&lon=${point.longitude}';
-
-    final response = await http.get(
-      Uri.parse(url),
-      headers: {
-        'User-Agent': 'JoinMe-App', // REQUIRED by Nominatim
-      },
-    );
-
+    final url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${point.latitude}&lon=${point.longitude}';
+    final response = await http.get(Uri.parse(url), headers: {'User-Agent': 'JoinMe-App'});
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       setState(() {
-        locationName =
-            data['name'] ??
-            data['address']?['cafe'] ??
-            data['address']?['place'] ??
-            data['address']?['restaurant'] ??
-            data['address']?['amenity'] ??
-            data['address']?['road'];
+        _locationName = data['display_name'] ?? data['name'] ?? data['address']?['road'];
       });
-    } else {
-      setState(() => locationName = null);
     }
   }
 
   void _onMapLongPress(TapPosition tapPosition, LatLng point) async {
     setState(() {
-      pinnedPoint = point;
-      locationName = null;
-      userPin = Marker(
+      _locationName = null;
+      _selectedEvent = null;
+      _mapCenter = point;
+      _mapZoom = 15;
+      _userPin = Marker(
         point: point,
-        width: 60,
-        height: 60,
-        child: AnimatedScale(
-          scale: 1.2,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.elasticOut,
-          child: Image.asset('images/JoinMe.png', width: 48, height: 48),
-        ),
+        width: 64,
+        height: 64,
+        child: const Icon(Icons.location_on, size: 56, color: Color(0xFFF59E0B)),
       );
-      markers = [userPin!];
     });
     await _fetchPlaceName(point);
+    _refreshMarkers();
     if (!mounted) return;
-    popupController.showPopupsOnlyFor([userPin!]);
-    _showPinInfo(context);
-  }
-
-  /// Perform a forward geocode search using OpenStreetMap Nominatim.
-  Future<void> _searchLocation(String query) async {
-    if (query.trim().isEmpty) return;
-
-    // restrict search to Ethiopia using countrycodes=et (ISO 3166-1 alpha2)
-    final url =
-        'https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=et&q=${Uri.encodeComponent(query)}&limit=1';
-
-    final response = await http.get(
-      Uri.parse(url),
-      headers: {'User-Agent': 'JoinMe-App'},
-    );
-
-    if (response.statusCode == 200) {
-      final List data = jsonDecode(response.body);
-      if (data.isNotEmpty) {
-        final place = data.first;
-        final lat = double.tryParse(place['lat'].toString());
-        final lon = double.tryParse(place['lon'].toString());
-
-        if (lat != null && lon != null) {
-          final point = LatLng(lat, lon);
-
-          mapController.move(point, 15);
-          setState(() {
-            pinnedPoint = point;
-            locationName = place['display_name'];
-            userPin = Marker(
-              point: point,
-              width: 60,
-              height: 60,
-              child: AnimatedScale(
-                scale: 1.2,
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.elasticOut,
-                child: Image.asset('images/JoinMe.png', width: 48, height: 48),
-              ),
-            );
-            markers = [userPin!];
-          });
-          return;
-        }
-      }
-      // no results or invalid coordinates
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Location not found')));
-    } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Error searching location')));
-    }
-  }
-
-  void _showPinInfo(BuildContext context) {
-    showDialog(
+    showModalBottomSheet(
       context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: SingleChildScrollView(
-              child: Form(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Pin Location Details",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      "Latitude: ${pinnedPoint!.latitude.toStringAsFixed(6)}",
-                    ),
-                    Text(
-                      "Longitude: ${pinnedPoint!.longitude.toStringAsFixed(6)}",
-                    ),
-                    if (locationName != null) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.storefront, color: Colors.orange),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                "Registered as: $locationName",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      decoration: const InputDecoration(
-                        labelText: 'Location Name / Title',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Description',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text("Cancel"),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color.fromARGB(
-                              255,
-                              233,
-                              185,
-                              112,
-                            ),
-                            foregroundColor: Colors.black,
-                          ),
-                          onPressed: () {
-                            // TODO: Handle form submission with coordinates
-                            Navigator.of(context).pop();
-                          },
-                          child: const Text("Save Location"),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Location picked', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              Text(_locationName ?? 'Custom location', style: Theme.of(context).textTheme.bodyLarge),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.pushNamed(context, '/create'),
+                style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                child: const Text('Create event at this spot'),
               ),
-            ),
+            ],
           ),
         );
       },
     );
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  void _onSearchEvents(String query) {
+    appState.setSearchQuery(query);
+    _refreshMarkers();
   }
+
+  void _selectCategory(EventCategory? category) {
+    appState.setFilterCategory(category);
+    _refreshMarkers();
+  }
+
+  EventModel? get _previewEvent => _selectedEvent ?? (appState.events.isNotEmpty ? appState.events.first : null);
 
   @override
   Widget build(BuildContext context) {
-    // Use theme mode for map tiles
-    final isDark = widget.isDark;
     return Scaffold(
       backgroundColor: Colors.transparent,
-      drawerScrimColor: Colors.transparent,
       body: Stack(
         children: [
-          // Map at the bottom
           Positioned.fill(
             child: FlutterMap(
               mapController: mapController,
               options: MapOptions(
-                initialCenter: LatLng(9.03, 38.74),
-                initialZoom: 13,
+                initialCenter: _mapCenter,
+                initialZoom: _mapZoom,
                 onLongPress: _onMapLongPress,
+                onPositionChanged: (position, hasGesture) {
+                  setState(() {
+                    _mapCenter = position.center;
+                    _mapZoom = position.zoom;
+                  });
+                },
               ),
               children: [
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.joinme',
-                  // Always use default OpenStreetMap tiles for all themes
-                ),
-                if (markers.isNotEmpty)
-                  PopupMarkerLayerWidget(
-                    options: PopupMarkerLayerOptions(
-                      markers: markers,
-                      popupController: popupController,
-                      popupDisplayOptions: PopupDisplayOptions(
-                        builder: (context, marker) => Card(
-                          color: Colors.white.withOpacity(0.95),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  locationName ?? 'Pinned Location',
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                if (pinnedPoint != null)
-                                  Text(
-                                    'Lat: ${pinnedPoint!.latitude.toStringAsFixed(5)}, Lng: ${pinnedPoint!.longitude.toStringAsFixed(5)}',
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.example.joinme'),
+                MarkerLayer(markers: _eventMarkers),
               ],
             ),
           ),
-          // TopBar overlay
+          Positioned(top: 0, left: 0, right: 0, child: SafeArea(child: Align(child: const TopBar()))),
           Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(child: Align(child: TopBar())),
-          ),
-          // Search bar overlay (glassmorphism)
-          Positioned(
-            top: 60,
-            left: 0,
-            right: 0,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: GlassmorphicContainer(
-                width: double.infinity,
-                height: 56,
-                borderRadius: 16,
-                blur: 16,
-                alignment: Alignment.center,
-                border: 1,
-                linearGradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white.withOpacity(0.25),
-                    Colors.white.withOpacity(0.05),
-                  ],
-                  stops: const [0.1, 1],
-                ),
-                borderGradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white.withOpacity(0.5),
-                    Colors.white.withOpacity(0.1),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    // Event search field
-                    Expanded(
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Search event',
-                          prefixIcon: const Icon(Icons.event),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                          ),
-                        ),
-                        style: const TextStyle(color: Colors.black),
-                        // TODO: Implement event search logic
-                        onSubmitted: (value) {
-                          // Placeholder for event search
-                        },
+            top: 70,
+            left: 16,
+            right: 16,
+            child: GlassmorphicContainer(
+              width: double.infinity,
+              height: 58,
+              borderRadius: 20,
+              blur: 16,
+              alignment: Alignment.center,
+              border: 1,
+              linearGradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Colors.white.withOpacity(0.22), Colors.white.withOpacity(0.08)],
+              ),
+              borderGradient: LinearGradient(colors: [Colors.white.withOpacity(0.5), Colors.white.withOpacity(0.1)]),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Search nearby events',
+                        prefixIcon: const Icon(Icons.search),
+                        border: InputBorder.none,
                       ),
+                      onSubmitted: _onSearchEvents,
                     ),
-                    const SizedBox(width: 8),
-                    // Location search field
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          hintText: 'Search location',
-                          prefixIcon: const Icon(Icons.search),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                          ),
-                        ),
-                        textInputAction: TextInputAction.search,
-                        onSubmitted: _searchLocation,
-                        style: const TextStyle(color: Colors.black),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black.withOpacity(0.5),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                      ),
-                      onPressed: () => _searchLocation(_searchController.text),
-                      child: const Text('Go'),
-                    ),
-                  ],
-                ),
+                  ),
+                  IconButton(
+                    onPressed: () => _onSearchEvents(_searchController.text),
+                    icon: const Icon(Icons.arrow_forward_ios, size: 18),
+                  ),
+                ],
               ),
             ),
           ),
-          // Map controls (zoom in/out, recenter)
           Positioned(
-            bottom: 32,
+            top: 140,
+            left: 16,
             right: 16,
+            child: SizedBox(
+              height: 52,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _buildCategoryChip(null, 'All', Colors.grey),
+                  ...EventCategory.values.map((category) => _buildCategoryChip(category, category.label, Color(category.colorValue))).toList(),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 20,
+            left: 16,
+            right: 16,
+            child: _previewEvent == null
+                ? const SizedBox()
+                : GestureDetector(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EventDetailScreen(event: _previewEvent!))),
+                    child: GlassmorphicContainer(
+                      width: double.infinity,
+                      height: 170,
+                      borderRadius: 24,
+                      blur: 16,
+                      alignment: Alignment.center,
+                      border: 1,
+                      linearGradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Colors.white.withOpacity(0.22), Colors.white.withOpacity(0.08)],
+                      ),
+                      borderGradient: LinearGradient(colors: [Colors.white.withOpacity(0.5), Colors.white.withOpacity(0.1)]),
+                      child: Padding(
+                        padding: const EdgeInsets.all(18.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  decoration: BoxDecoration(color: Color(_previewEvent!.category.colorValue).withOpacity(0.15), borderRadius: BorderRadius.circular(14)),
+                                  padding: const EdgeInsets.all(10),
+                                  child: Text(_previewEvent!.category.icon, style: const TextStyle(fontSize: 24)),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Text(_previewEvent!.title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontSize: 18, fontWeight: FontWeight.w700)),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(color: Color(_previewEvent!.category.colorValue).withOpacity(0.14), borderRadius: BorderRadius.circular(16)),
+                                  child: Text(_previewEvent!.category.label, style: TextStyle(color: Color(_previewEvent!.category.colorValue), fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(_previewEvent!.description, maxLines: 2, overflow: TextOverflow.ellipsis),
+                            const Spacer(),
+                            Row(
+                              children: [
+                                Icon(Icons.calendar_today, size: 18, color: Theme.of(context).colorScheme.primary),
+                                const SizedBox(width: 6),
+                                Text('${_previewEvent!.dateTime.month}/${_previewEvent!.dateTime.day} ${_previewEvent!.dateTime.hour.toString().padLeft(2, '0')}:${_previewEvent!.dateTime.minute.toString().padLeft(2, '0')}', style: Theme.of(context).textTheme.bodySmall),
+                                const Spacer(),
+                                Text('${_previewEvent!.participantsCount}/${_previewEvent!.maxParticipants} going', style: Theme.of(context).textTheme.bodySmall),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+          Positioned(
+            bottom: 30,
+            right: 18,
             child: Column(
               children: [
-                FloatingActionButton(
+                FloatingActionButton.small(
                   heroTag: 'zoomIn',
-                  mini: true,
+                  onPressed: () => setState(() {
+                    _mapZoom += 1;
+                    mapController.move(_mapCenter, _mapZoom);
+                  }),
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.black,
-                  onPressed: () => mapController.move(
-                    mapController.camera.center,
-                    mapController.camera.zoom + 1,
-                  ),
                   child: const Icon(Icons.add),
                 ),
-                const SizedBox(height: 8),
-                FloatingActionButton(
+                const SizedBox(height: 10),
+                FloatingActionButton.small(
                   heroTag: 'zoomOut',
-                  mini: true,
+                  onPressed: () => setState(() {
+                    _mapZoom = (_mapZoom - 1).clamp(1, 19);
+                    mapController.move(_mapCenter, _mapZoom);
+                  }),
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.black,
-                  onPressed: () => mapController.move(
-                    mapController.camera.center,
-                    mapController.camera.zoom - 1,
-                  ),
                   child: const Icon(Icons.remove),
                 ),
-                const SizedBox(height: 8),
-                FloatingActionButton(
+                const SizedBox(height: 10),
+                FloatingActionButton.small(
                   heroTag: 'recenter',
-                  mini: true,
+                  onPressed: () => setState(() {
+                    _mapCenter = const LatLng(9.03, 38.74);
+                    _mapZoom = 13;
+                    mapController.move(_mapCenter, _mapZoom);
+                  }),
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.black,
-                  onPressed: () => mapController.move(LatLng(9.03, 38.74), 13),
                   child: const Icon(Icons.my_location),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryChip(EventCategory? category, String label, Color color) {
+    final selected = appState.selectedCategory == category;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        selectedColor: color.withOpacity(0.2),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        labelStyle: TextStyle(color: selected ? color : Theme.of(context).textTheme.bodyLarge?.color),
+        onSelected: (_) => _selectCategory(category),
       ),
     );
   }
