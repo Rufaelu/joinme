@@ -1,112 +1,100 @@
 import 'package:flutter/material.dart';
-import 'package:joinme/src/Screens/app_shell.dart';
-import 'package:joinme/src/Screens/auth_screen.dart';
-import 'package:joinme/src/Screens/onboarding_screen.dart';
-import 'package:joinme/src/Screens/create_event_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'providers/app_state.dart';
+import 'theme/app_theme.dart';
+import 'screens/login_signup_screen.dart';
+import 'screens/map_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'screens/create_event_screen.dart';
+import 'screens/event_detail_screen.dart';
+import 'screens/profile_screen.dart';
+import 'screens/profile_edit_screen.dart';
+import 'screens/friends_screen.dart';
+import 'screens/notifications_screen.dart';
+import 'screens/messages_screen.dart';
+import 'screens/group_chat_screen.dart';
+import 'screens/direct_chat_screen.dart';
 
 void main() {
-  runApp(const JoinMeApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AppState()),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
-class JoinMeApp extends StatefulWidget {
-  const JoinMeApp({super.key});
-
-  @override
-  State<JoinMeApp> createState() => _JoinMeAppState();
-}
-
-class _JoinMeAppState extends State<JoinMeApp> {
-  bool _initialized = false;
-  bool _isDark = false;
-  bool _hasSeenOnboarding = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadPreferences();
-  }
-
-  Future<void> _loadPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _isDark = prefs.getBool('joinme_dark') ?? false;
-      _hasSeenOnboarding = prefs.getBool('joinme_onboarding') ?? false;
-      _initialized = true;
-    });
-  }
-
-  Future<void> _setTheme(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('joinme_dark', value);
-    setState(() => _isDark = value);
-  }
-
-  Future<void> _completeOnboarding() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('joinme_onboarding', true);
-    setState(() => _hasSeenOnboarding = true);
-  }
-
-  ThemeData get _lightTheme {
-    return ThemeData.light().copyWith(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFFF59E0B),
-        brightness: Brightness.light,
-        primary: const Color(0xFFF59E0B),
-        secondary: const Color(0xFF3B82F6),
-        surface: const Color(0xFFFFFFFF),
-        background: const Color(0xFFF8FAFC),
-      ),
-      scaffoldBackgroundColor: const Color(0xFFF8FAFC),
-      appBarTheme: const AppBarTheme(backgroundColor: Colors.transparent, elevation: 0, iconTheme: IconThemeData(color: Colors.black)),
-      textTheme: ThemeData.light().textTheme.apply(bodyColor: const Color(0xFF0F172A), displayColor: const Color(0xFF0F172A)),
-    );
-  }
-
-  ThemeData get _darkTheme {
-    return ThemeData.dark().copyWith(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFFF59E0B),
-        brightness: Brightness.dark,
-        primary: const Color(0xFFF59E0B),
-        secondary: const Color(0xFF60A5FA),
-        surface: const Color(0xFF1E293B),
-        background: const Color(0xFF0F172A),
-      ),
-      scaffoldBackgroundColor: const Color(0xFF0F172A),
-      appBarTheme: const AppBarTheme(backgroundColor: Colors.transparent, elevation: 0, iconTheme: IconThemeData(color: Colors.white)),
-      textTheme: ThemeData.dark().textTheme.apply(bodyColor: const Color(0xFFF8FAFC), displayColor: const Color(0xFFF8FAFC)),
-    );
-  }
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    if (!_initialized) {
-      return const MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(body: Center(child: CircularProgressIndicator())),
-      );
-    }
-
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: _lightTheme,
-      darkTheme: _darkTheme,
-      themeMode: _isDark ? ThemeMode.dark : ThemeMode.light,
-      routes: {
-        '/home': (context) => AppShell(onToggleTheme: () => _setTheme(!_isDark), isDark: _isDark),
-        '/create': (context) => const CreateEventScreen(),
+    return Consumer<AppState>(
+      builder: (context, appState, _) {
+        return MaterialApp(
+          title: 'JoinMe',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme.copyWith(
+            textTheme: GoogleFonts.interTextTheme(Theme.of(context).textTheme),
+          ),
+          darkTheme: AppTheme.darkTheme.copyWith(
+            textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+          ),
+          themeMode: appState.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          home: const AppNavigator(),
+        );
       },
-      home: _hasSeenOnboarding
-          ? Builder(
-              builder: (context) => AuthScreen(
-                onAuthenticated: () => Navigator.pushReplacementNamed(context, '/home'),
-              ),
-            )
-          : OnboardingScreen(onCompleted: _completeOnboarding),
     );
+  }
+}
+
+class AppNavigator extends StatelessWidget {
+  const AppNavigator({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final currentScreen = context.watch<AppState>().currentScreen;
+    final selectedEventId = context.watch<AppState>().selectedEventId;
+
+    return Scaffold(
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        child: _buildScreen(currentScreen, selectedEventId),
+      ),
+    );
+  }
+
+  Widget _buildScreen(String screen, String? eventId) {
+    switch (screen) {
+      case 'login':
+        return const LoginSignupScreen();
+      case 'onboarding':
+        return const OnboardingScreen();
+      case 'map':
+        return const MapScreen();
+      case 'create':
+        return const CreateEventScreen();
+      case 'event':
+        return EventDetailScreen(eventId: eventId);
+      case 'profile':
+        return const ProfileScreen();
+      case 'profileEdit':
+        return const ProfileEditScreen();
+      case 'friends':
+        return const FriendsScreen();
+      case 'notifications':
+        return const NotificationsScreen();
+      case 'messages':
+        return const MessagesScreen();
+      case 'chat':
+        return GroupChatScreen(eventId: eventId);
+      case 'directChat':
+        return const DirectChatScreen();
+      default:
+        return const MapScreen(); 
+    }
   }
 }
