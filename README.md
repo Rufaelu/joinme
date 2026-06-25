@@ -30,9 +30,6 @@ JoinMe is a location-based mobile app that helps people create and discover spon
 
 5. Yahwenissi Elias — LS5191
 
-
-
-
 ---
 
 🚀 Features
@@ -52,8 +49,6 @@ JoinMe is a location-based mobile app that helps people create and discover spon
 🌙 Dark and light theme support
 
 🎨 Premium mobile-first UI built with Flutter
-
-
 
 ---
 
