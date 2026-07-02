@@ -29,6 +29,13 @@
             {
               "client_id": "77110233609-763p5tsaqc09fqjk2truv4ve7vdj7kp2.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "77110233609-job168151ouiiiu62v480veht5mpjg3t.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.joinme"
+              }
             }
           ]
         }

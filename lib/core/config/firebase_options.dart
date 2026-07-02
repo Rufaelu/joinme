@@ -30,19 +30,19 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyYOUR-API-KEY-HERE',
+    apiKey: 'AIzaSyAOZWyz46im6dodYxIi2slgBcKp383FmF8',
     appId: '1:123456789012:web:a1b2c3d4e5f6',
     messagingSenderId: '123456789012',
-    projectId: 'joinme-placeholder',
+    projectId: 'joinme-19dd9',
     authDomain: 'joinme-placeholder.firebaseapp.com',
     storageBucket: 'joinme-placeholder.appspot.com',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyYOUR-API-KEY-HERE',
+    apiKey: 'AIzaSyBLj-xm8rziWtCQdWgLnP28bIOKH8Ipfq4',
     appId: '1:123456789012:android:a1b2c3d4e5f6',
     messagingSenderId: '123456789012',
-    projectId: 'joinme-placeholder',
+    projectId: 'joinme-19dd9',
     storageBucket: 'joinme-placeholder.appspot.com',
   );
 
