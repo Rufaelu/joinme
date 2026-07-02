@@ -1,30 +1,53 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:joinme/main.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:joinme/models/user_model.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('UserModel Tests', () {
+    test('Should correctly parse from JSON', () {
+      final now = Timestamp.now();
+      final json = {
+        'uid': 'test-uid',
+        'fullName': 'Rufael Melese',
+        'email': 'rufael@example.com',
+        'photoUrl': 'https://example.com/avatar.jpg',
+        'reliability': 98,
+        'createdAt': now,
+        'updatedAt': now,
+      };
+      
+      final user = UserModel.fromJson(json);
+      
+      expect(user.uid, 'test-uid');
+      expect(user.fullName, 'Rufael Melese');
+      expect(user.email, 'rufael@example.com');
+      expect(user.photoUrl, 'https://example.com/avatar.jpg');
+      expect(user.reliability, 98);
+      expect(user.createdAt, now.toDate());
+      expect(user.updatedAt, now.toDate());
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('Should convert to JSON correctly', () {
+      final now = DateTime.now();
+      final user = UserModel(
+        uid: 'test-uid',
+        fullName: 'Imran Getu',
+        email: 'imran@example.com',
+        photoUrl: null,
+        reliability: 95,
+        createdAt: now,
+        updatedAt: now,
+      );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+      final json = user.toJson();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+      expect(json['uid'], 'test-uid');
+      expect(json['fullName'], 'Imran Getu');
+      expect(json['email'], 'imran@example.com');
+      expect(json['photoUrl'], null);
+      expect(json['reliability'], 95);
+      expect(json['createdAt'], isA<Timestamp>());
+      expect(json['updatedAt'], isA<Timestamp>());
+    });
   });
 }

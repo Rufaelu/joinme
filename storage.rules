@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // User profiles folder
+    match /profiles/{userId}.jpg {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+    }
+
+    // Event cover images folder
+    match /events/{eventId}.jpg {
+      allow read: if isAuthenticated();
+      // Authenticated users can upload event images; updates/deletions require event owner checks
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+  }
+}

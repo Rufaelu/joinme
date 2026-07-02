@@ -1,62 +1,11 @@
 import 'package:flutter/material.dart';
+import '../models/event_model.dart';
 
 class EventCategory {
   static const String sports = 'sports';
   static const String study = 'study';
   static const String chill = 'chill';
   static const String creative = 'creative';
-}
-
-class EventHost {
-  final String name;
-  final String avatar;
-  final int reliability;
-
-  EventHost({
-    required this.name,
-    required this.avatar,
-    required this.reliability,
-  });
-}
-
-class EventLocation {
-  final double lat;
-  final double lng;
-  final String name;
-
-  EventLocation({
-    required this.lat,
-    required this.lng,
-    required this.name,
-  });
-}
-
-class JoinMeEvent {
-  final String id;
-  final String title;
-  final String category;
-  final EventHost host;
-  final EventLocation location;
-  final int participants;
-  final int maxParticipants;
-  final int timeRemaining;
-  final int duration;
-  final String? description;
-  final List<String> participantAvatars;
-
-  JoinMeEvent({
-    required this.id,
-    required this.title,
-    required this.category,
-    required this.host,
-    required this.location,
-    required this.participants,
-    required this.maxParticipants,
-    required this.timeRemaining,
-    required this.duration,
-    this.description,
-    required this.participantAvatars,
-  });
 }
 
 class Friend {

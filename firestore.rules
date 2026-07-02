@@ -1,0 +1,53 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+      
+      // Favorites subcollection
+      match /favorites/{eventId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Events collection
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && resource.data.organizerId == request.auth.uid;
+
+      // Participants subcollection
+      match /participants/{userId} {
+        allow read: if isAuthenticated();
+        // Users can add/remove themselves, or the event organizer can manage participants
+        allow write: if isOwner(userId) || (resource != null && get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid);
+      }
+
+      // Messages subcollection
+      match /messages/{messageId} {
+        allow read: if isAuthenticated();
+        // Authenticated users can write their own messages
+        allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if isAuthenticated() && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow write: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || !exists(/databases/$(database)/documents/notifications/$(notificationId)));
+    }
+  }
+}

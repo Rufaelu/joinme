@@ -32,15 +32,24 @@ class _MessagesScreenState extends State<MessagesScreen> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
+    final appState = context.watch<AppState>();
+    final user = appState.currentUser;
+    final avatarInitials = user != null && user.fullName.isNotEmpty
+        ? user.fullName.split(' ').map((e) => e[0]).take(2).join().toUpperCase()
+        : 'US';
+
+    final userEvents = appState.events.where((e) =>
+        e.organizerId == user?.uid || e.participantAvatars.contains(avatarInitials)).toList();
+
     final List<Map<String, dynamic>> mockChats = [
-      ...mockEvents.take(5).map((e) => {
+      ...userEvents.map((e) => {
         'id': e.id,
         'type': 'group',
         'name': e.title,
-        'avatar': '⚽', // Simplify for demo
-        'lastMessage': '${e.host.name}: See you there!',
-        'timestamp': DateTime.now().subtract(Duration(minutes: (e.id.hashCode % 60))),
-        'unreadCount': e.id.hashCode % 3,
+        'avatar': e.category == 'sports' ? '⚽' : e.category == 'study' ? '📚' : e.category == 'chill' ? '☕' : '🎨',
+        'lastMessage': '${e.host.name}: Active conversation',
+        'timestamp': e.updatedAt,
+        'unreadCount': 0,
         'category': e.category,
         'participantCount': e.participants,
       }),

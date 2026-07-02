@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:math' as math;
 import '../providers/app_state.dart';
+import '../models/event_model.dart';
 import '../theme/app_theme.dart';
 import '../data/mock_data.dart';
 import '../widgets/glass_container.dart';
@@ -18,13 +19,22 @@ class EventDetailScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     
-    final events = context.watch<AppState>().events;
+    final appState = context.watch<AppState>();
+    final events = appState.events;
     // Find event or use default
     final JoinMeEvent event = events.firstWhere(
       (e) => e.id == eventId,
       orElse: () => events.isNotEmpty ? events[0] : mockEvents[0],
     );
     
+    final currentUser = appState.currentUser;
+    final userInitials = currentUser != null && currentUser.fullName.isNotEmpty
+        ? currentUser.fullName.split(' ').map((e) => e[0]).take(2).join().toUpperCase()
+        : 'US';
+    
+    final isOrganizer = event.organizerId == currentUser?.uid;
+    final isParticipant = event.participantAvatars.contains(userInitials) || isOrganizer;
+
     final catColors = AppTheme.categoryColors[event.category]!;
     final timeProgress = ((event.duration - event.timeRemaining) / event.duration);
 
@@ -331,39 +341,134 @@ class EventDetailScreen extends StatelessWidget {
 
                       const SizedBox(height: 48),
 
-                      // Join Button
-                      GestureDetector(
-                        onTap: () => context.read<AppState>().navigateTo('chat', eventId: event.id),
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.yellow[500],
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.yellow[600]!.withOpacity(0.4),
-                                blurRadius: 20,
-                                offset: const Offset(0, 10),
-                              )
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
-                              Icon(LucideIcons.users, color: Colors.white, size: 20),
-                              SizedBox(width: 8),
-                              Text(
-                                'Join Event',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
+                      // Join / Leave / Open Chat button
+                      Column(
+                        children: [
+                          if (isParticipant) ...[
+                            // Open Chat Button
+                            GestureDetector(
+                              onTap: () => appState.navigateTo('chat', eventId: event.id),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.yellow[500],
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.yellow[600]!.withOpacity(0.4),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 10),
+                                    )
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: const [
+                                    Icon(LucideIcons.messageSquare, color: Colors.white, size: 20),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Open Group Chat',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            if (!isOrganizer) ...[
+                              const SizedBox(height: 12),
+                              // Leave Event Button
+                              GestureDetector(
+                                onTap: () async {
+                                  try {
+                                    await appState.leaveEvent(event.id);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('You left the event.'), backgroundColor: Colors.orange),
+                                    );
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Failed to leave event: $e'), backgroundColor: Colors.red),
+                                    );
+                                  }
+                                },
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? Colors.white10 : Colors.black12,
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(LucideIcons.userMinus, color: Colors.red[400], size: 20),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Leave Event',
+                                        style: TextStyle(
+                                          color: Colors.red[400],
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
-                          ),
-                        ),
+                          ] else ...[
+                            // Join Button
+                            GestureDetector(
+                              onTap: () async {
+                                try {
+                                  await appState.joinEvent(event.id);
+                                  appState.navigateTo('chat', eventId: event.id);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Successfully joined event!'), backgroundColor: Colors.green),
+                                  );
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Failed to join event: $e'), backgroundColor: Colors.red),
+                                  );
+                                }
+                              },
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.yellow[500],
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.yellow[600]!.withOpacity(0.4),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 10),
+                                    )
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: const [
+                                    Icon(LucideIcons.userPlus, color: Colors.white, size: 20),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Join Event',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ).animate().fadeIn(delay: 600.ms).moveY(begin: 20, end: 0, duration: 400.ms),
                       const SizedBox(height: 32),
                     ],

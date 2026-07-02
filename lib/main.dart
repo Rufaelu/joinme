@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'core/config/firebase_options.dart';
 import 'providers/app_state.dart';
 import 'theme/app_theme.dart';
 import 'screens/login_signup_screen.dart';
@@ -16,7 +18,15 @@ import 'screens/messages_screen.dart';
 import 'screens/group_chat_screen.dart';
 import 'screens/direct_chat_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    debugPrint('Firebase initialization failed: $e');
+  }
   runApp(
     MultiProvider(
       providers: [

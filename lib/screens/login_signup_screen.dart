@@ -16,6 +16,7 @@ class LoginSignupScreen extends StatefulWidget {
 class _LoginSignupScreenState extends State<LoginSignupScreen> {
   bool _isLogin = true;
   bool _showPassword = false;
+  bool _isLoading = false;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -29,9 +30,78 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
     super.dispose();
   }
 
-  void _handleSubmit() {
-    // In a real app, do auth here.
-    context.read<AppState>().navigateTo('map');
+  Future<void> _showError(String message) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red[600],
+      ),
+    );
+  }
+
+  Future<void> _handleSubmit() async {
+    if (_isLoading) return;
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final name = _nameController.text.trim();
+
+    if (email.isEmpty || password.isEmpty || (!_isLogin && name.isEmpty)) {
+      _showError('Please fill in all required fields.');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final appState = context.read<AppState>();
+      if (_isLogin) {
+        await appState.logIn(email, password);
+      } else {
+        await appState.signUp(email, password, name);
+      }
+    } catch (e) {
+      _showError(e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    try {
+      await context.read<AppState>().signInWithGoogle();
+    } catch (e) {
+      _showError(e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleForgotPassword() async {
+    if (_isLoading) return;
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      _showError('Please enter your email address to reset your password.');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      await context.read<AppState>().forgotPassword(email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password reset email sent! Check your inbox.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      _showError(e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -141,7 +211,7 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                             icon: LucideIcons.chrome,
                             iconColor: Colors.blue[500]!,
                             text: 'Continue with Google',
-                            onTap: _handleSubmit,
+                            onTap: _handleGoogleSignIn,
                           ),
                           const SizedBox(height: 12),
                           Row(
@@ -303,12 +373,15 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                     alignment: Alignment.centerRight,
                                     child: Padding(
                                       padding: const EdgeInsets.only(top: 16.0),
-                                      child: Text(
-                                        'Forgot password?',
-                                        style: TextStyle(
-                                          color: Colors.yellow[400],
-                                          fontWeight: FontWeight.w500,
-                                          fontSize: 14,
+                                      child: GestureDetector(
+                                        onTap: _handleForgotPassword,
+                                        child: Text(
+                                          'Forgot password?',
+                                          style: TextStyle(
+                                            color: Colors.yellow[400],
+                                            fontWeight: FontWeight.w500,
+                                            fontSize: 14,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -318,14 +391,14 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                 
                                 // Submit Button
                                 GestureDetector(
-                                  onTap: _handleSubmit,
+                                  onTap: _isLoading ? null : _handleSubmit,
                                   child: Container(
                                     width: double.infinity,
                                     padding: const EdgeInsets.symmetric(vertical: 16),
                                     decoration: BoxDecoration(
-                                      color: Colors.yellow[500],
+                                      color: _isLoading ? Colors.grey : Colors.yellow[500],
                                       borderRadius: BorderRadius.circular(16),
-                                      boxShadow: [
+                                      boxShadow: _isLoading ? [] : [
                                         BoxShadow(
                                           color: Colors.yellow[600]!.withOpacity(0.4),
                                           blurRadius: 20,
@@ -336,16 +409,27 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        Text(
-                                          _isLogin ? 'Sign In' : 'Create Account',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 18,
+                                        if (_isLoading)
+                                          const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              color: Colors.white,
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        else ...[
+                                          Text(
+                                            _isLogin ? 'Sign In' : 'Create Account',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 18,
+                                            ),
                                           ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        const Icon(LucideIcons.zap, color: Colors.white, size: 20),
+                                          const SizedBox(width: 8),
+                                          const Icon(LucideIcons.zap, color: Colors.white, size: 20),
+                                        ],
                                       ],
                                     ),
                                   ),

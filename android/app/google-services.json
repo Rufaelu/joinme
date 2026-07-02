@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "77110233609",
+    "project_id": "joinme-19dd9",
+    "storage_bucket": "joinme-19dd9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:77110233609:android:5dfa645acca6e7d02086d8",
+        "android_client_info": {
+          "package_name": "com.example.joinme"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "77110233609-763p5tsaqc09fqjk2truv4ve7vdj7kp2.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBLj-xm8rziWtCQdWgLnP28bIOKH8Ipfq4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "77110233609-763p5tsaqc09fqjk2truv4ve7vdj7kp2.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

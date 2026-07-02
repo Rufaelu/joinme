@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
 import '../widgets/glass_container.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -14,6 +14,29 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+
+    final appState = context.watch<AppState>();
+    final user = appState.currentUser;
+
+    if (user == null) {
+      return Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Colors.yellow[500]),
+        ),
+      );
+    }
+
+    final avatarInitials = user.fullName.isNotEmpty
+        ? user.fullName.split(' ').map((e) => e[0]).take(2).join().toUpperCase()
+        : 'US';
+
+    // Calculate real stats
+    final hostedCount = appState.events.where((e) => e.organizerId == user.uid).length;
+    final joinedCount = appState.events.where((e) => e.participantAvatars.contains(avatarInitials) && e.organizerId != user.uid).length;
+    final totalAttended = hostedCount + joinedCount;
+
+    // Filter events user is involved in
+    final userEvents = appState.events.where((e) => e.organizerId == user.uid || e.participantAvatars.contains(avatarInitials)).toList();
 
     return Scaffold(
       body: Container(
@@ -38,7 +61,7 @@ class ProfileScreen extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     GestureDetector(
-                      onTap: () => context.read<AppState>().navigateTo('map'),
+                      onTap: () => appState.navigateTo('map'),
                       child: GlassContainer(
                         borderRadius: 30,
                         padding: const EdgeInsets.all(12),
@@ -54,7 +77,7 @@ class ProfileScreen extends StatelessWidget {
                       ),
                     ),
                     GestureDetector(
-                      onTap: () => context.read<AppState>().navigateTo('profileEdit'),
+                      onTap: () => appState.navigateTo('profileEdit'),
                       child: GlassContainer(
                         borderRadius: 30,
                         padding: const EdgeInsets.all(12),
@@ -76,11 +99,13 @@ class ProfileScreen extends StatelessWidget {
                         height: 100,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: [Colors.yellow[400]!, Colors.blue[600]!],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
+                          gradient: user.photoUrl == null
+                              ? LinearGradient(
+                                  colors: [Colors.yellow[400]!, Colors.blue[600]!],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                )
+                              : null,
                           boxShadow: [
                             BoxShadow(
                               color: Colors.blue[600]!.withOpacity(0.4),
@@ -89,16 +114,31 @@ class ProfileScreen extends StatelessWidget {
                             )
                           ],
                         ),
-                        child: Center(
-                          child: Text(
-                            currentUser['avatar'] as String,
-                            style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
-                          ),
-                        ),
+                        child: user.photoUrl != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(50),
+                                child: CachedNetworkImage(
+                                  imageUrl: user.photoUrl!,
+                                  fit: BoxFit.cover,
+                                  placeholder: (context, url) => const CircularProgressIndicator(),
+                                  errorWidget: (context, url, error) => Center(
+                                    child: Text(
+                                      avatarInitials,
+                                      style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : Center(
+                                child: Text(
+                                  avatarInitials,
+                                  style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+                                ),
+                              ),
                       ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
                       const SizedBox(height: 16),
                       Text(
-                        currentUser['name'] as String,
+                        user.fullName,
                         style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black),
                       ).animate().fadeIn(delay: 100.ms).moveY(begin: 20, end: 0, duration: 400.ms),
                       const SizedBox(height: 32),
@@ -107,9 +147,9 @@ class ProfileScreen extends StatelessWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _buildStatItem(isDark, LucideIcons.star, '${currentUser['reliability']}%', 'Reliability', Colors.yellow[500]!),
-                          _buildStatItem(isDark, LucideIcons.calendarCheck, '${currentUser['eventsAttended']}', 'Attended', Colors.blue[400]!),
-                          _buildStatItem(isDark, LucideIcons.calendarPlus, '${currentUser['eventsHosted']}', 'Hosted', Colors.purple[400]!),
+                          _buildStatItem(isDark, LucideIcons.star, '${user.reliability}%', 'Reliability', Colors.yellow[500]!),
+                          _buildStatItem(isDark, LucideIcons.calendarCheck, '$totalAttended', 'Attended', Colors.blue[400]!),
+                          _buildStatItem(isDark, LucideIcons.calendarPlus, '$hostedCount', 'Hosted', Colors.purple[400]!),
                         ],
                       ).animate().fadeIn(delay: 200.ms).moveY(begin: 20, end: 0, duration: 400.ms),
                       const SizedBox(height: 32),
@@ -120,7 +160,7 @@ class ProfileScreen extends StatelessWidget {
                         icon: LucideIcons.users,
                         iconColor: Colors.blue[400]!,
                         title: 'Friends',
-                        onTap: () => context.read<AppState>().navigateTo('friends'),
+                        onTap: () => appState.navigateTo('friends'),
                       ).animate().fadeIn(delay: 300.ms).moveY(begin: 20, end: 0, duration: 400.ms),
                       const SizedBox(height: 12),
                       _buildActionRow(
@@ -128,59 +168,79 @@ class ProfileScreen extends StatelessWidget {
                         icon: isDark ? LucideIcons.sun : LucideIcons.moon,
                         iconColor: isDark ? Colors.yellow[400]! : Colors.blue[500]!,
                         title: isDark ? 'Light Mode' : 'Dark Mode',
-                        onTap: () => context.read<AppState>().toggleTheme(),
+                        onTap: () => appState.toggleTheme(),
                       ).animate().fadeIn(delay: 400.ms).moveY(begin: 20, end: 0, duration: 400.ms),
                       
                       const SizedBox(height: 32),
                       
-                      // Past Events
+                      // Active Events Section
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Past Events',
+                          'Your Events',
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black),
                         ),
                       ).animate().fadeIn(delay: 500.ms),
                       const SizedBox(height: 16),
                       
-                      ...(currentUser['pastEvents'] as List).map((event) {
-                        final catColor = AppTheme.categoryColors[event['category']]!;
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12.0),
-                          child: GlassContainer(
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: catColor.primary.withOpacity(0.2),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(LucideIcons.calendar, color: catColor.primary),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(event['title']!, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
-                                      Text(event['date']!, style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                      if (userEvents.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24.0),
+                          child: Text(
+                            'No active events yet.',
+                            style: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
                           ),
-                        ).animate().fadeIn(delay: 600.ms).moveY(begin: 20, end: 0, duration: 400.ms);
-                      }).toList(),
+                        ).animate().fadeIn(delay: 600.ms)
+                      else
+                        ...userEvents.map((event) {
+                          final catColor = AppTheme.categoryColors[event.category]!;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12.0),
+                            child: GestureDetector(
+                              onTap: () => appState.navigateTo('event', eventId: event.id),
+                              child: GlassContainer(
+                                padding: const EdgeInsets.all(16),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: catColor.primary.withOpacity(0.2),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(LucideIcons.calendar, color: catColor.primary),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(event.title, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
+                                          Text(event.location.name, style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12)),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ).animate().fadeIn(delay: 600.ms).moveY(begin: 20, end: 0, duration: 400.ms);
+                        }).toList(),
                       
                       const SizedBox(height: 32),
                       
                       // Logout
                       GestureDetector(
-                        onTap: () => context.read<AppState>().navigateTo('login'),
+                        onTap: () async {
+                          try {
+                            await appState.logOut();
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Failed to log out: $e'), backgroundColor: Colors.red),
+                            );
+                          }
+                        },
                         child: Text(
                           'Log Out',
                           style: TextStyle(color: Colors.red[400], fontWeight: FontWeight.bold, fontSize: 16),

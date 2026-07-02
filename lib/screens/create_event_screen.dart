@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image_picker/image_picker.dart';
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_container.dart';
@@ -19,6 +20,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   int _selectedDuration = 60;
   String _title = '';
   DateTime? _selectedDate;
+  String? _localImagePath;
+  bool _isCreating = false;
   
   final _titleController = TextEditingController();
   final _customCategoryController = TextEditingController();
@@ -386,47 +389,90 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                       ),
                       const SizedBox(height: 48),
 
+                      // Event Image Selection
+                      Text('Event Cover Image', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () async {
+                          final picker = ImagePicker();
+                          final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+                          if (picked != null) {
+                            setState(() => _localImagePath = picked.path);
+                          }
+                        },
+                        child: GlassContainer(
+                          child: Row(
+                            children: [
+                              Icon(LucideIcons.image, color: Colors.blue[400]),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _localImagePath != null
+                                      ? 'Selected: ${_localImagePath!.split('/').last}'
+                                      : 'Tap to select cover image',
+                                  style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (_localImagePath != null)
+                                GestureDetector(
+                                  onTap: () => setState(() => _localImagePath = null),
+                                  child: Icon(LucideIcons.trash2, color: Colors.red[400]),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+
                       // Submit Button
                       GestureDetector(
-                        onTap: _title.trim().isNotEmpty ? () {
-                          final appState = context.read<AppState>();
-                          final loc = appState.pickedLocation;
-                          
-                          final eventLocation = loc != null 
-                              ? EventLocation(lat: loc.lat, lng: loc.lng, name: loc.name)
-                              : EventLocation(lat: 9.0300, lng: 38.7400, name: 'Addis Ababa');
-                          
-                          final newEvent = JoinMeEvent(
-                            id: DateTime.now().millisecondsSinceEpoch.toString(),
-                            title: _title.trim(),
-                            category: _selectedCategory == 'custom' ? 'creative' : _selectedCategory,
-                            host: EventHost(
-                              name: currentUser['name'] as String,
-                              avatar: currentUser['avatar'] as String,
-                              reliability: currentUser['reliability'] as int,
-                            ),
-                            location: eventLocation,
-                            participants: 1,
-                            maxParticipants: int.tryParse(_participantsController.text) ?? 10,
-                            timeRemaining: 60,
-                            duration: _selectedDuration,
-                            description: _descriptionController.text.trim().isNotEmpty ? _descriptionController.text.trim() : null,
-                            participantAvatars: [currentUser['avatar'] as String],
-                          );
-                          
-                          appState.addEvent(newEvent);
-                          appState.navigateTo('map');
+                        onTap: (_title.trim().isNotEmpty && !_isCreating) ? () async {
+                          setState(() => _isCreating = true);
+                          try {
+                            final appState = context.read<AppState>();
+                            final loc = appState.pickedLocation;
+                            
+                            final double lat = loc?.lat ?? 9.0300;
+                            final double lng = loc?.lng ?? 38.7400;
+                            final String locName = loc?.name ?? 'Addis Ababa';
+
+                            await appState.createNewEvent(
+                              title: _title.trim(),
+                              category: _selectedCategory == 'custom'
+                                  ? _customCategoryController.text.trim()
+                                  : _selectedCategory,
+                              lat: lat,
+                              lng: lng,
+                              locationName: locName,
+                              maxParticipants: int.tryParse(_participantsController.text) ?? 10,
+                              duration: _selectedDuration,
+                              description: _descriptionController.text.trim().isNotEmpty 
+                                  ? _descriptionController.text.trim() 
+                                  : null,
+                              localImagePath: _localImagePath,
+                            );
+                            
+                            appState.navigateTo('map');
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Failed to create event: $e'), backgroundColor: Colors.red),
+                            );
+                          } finally {
+                            if (mounted) setState(() => _isCreating = false);
+                          }
                         } : null,
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           decoration: BoxDecoration(
-                            color: _title.trim().isNotEmpty 
+                            color: (_title.trim().isNotEmpty && !_isCreating) 
                               ? Colors.blue[500] 
                               : (isDark ? Colors.white10 : Colors.black12),
                             borderRadius: BorderRadius.circular(16),
-                            boxShadow: _title.trim().isNotEmpty ? [
+                            boxShadow: (_title.trim().isNotEmpty && !_isCreating) ? [
                               BoxShadow(
                                 color: Colors.blue[600]!.withOpacity(0.4),
                                 blurRadius: 20,
@@ -435,14 +481,20 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                             ] : [],
                           ),
                           child: Center(
-                            child: Text(
-                              'Create Event',
-                              style: TextStyle(
-                                color: _title.trim().isNotEmpty ? Colors.white : (isDark ? Colors.white54 : Colors.black54),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
+                            child: _isCreating 
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : Text(
+                                  'Create Event',
+                                  style: TextStyle(
+                                    color: _title.trim().isNotEmpty ? Colors.white : (isDark ? Colors.white54 : Colors.black54),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                  ),
+                                ),
                           ),
                         ),
                       ),

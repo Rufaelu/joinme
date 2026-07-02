@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
-import '../widgets/glass_container.dart';
+import '../models/event_model.dart';
 
 class GroupChatScreen extends StatefulWidget {
   final String? eventId;
@@ -21,37 +21,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   final ScrollController _scrollController = ScrollController();
   late JoinMeEvent _event;
 
-  final List<Map<String, dynamic>> _messages = [
-    {
-      'id': '1',
-      'senderName': 'Marcus',
-      'senderAvatar': '🏃',
-      'message': 'Hey everyone! Excited for this!',
-      'timestamp': '10:23 AM',
-      'isCurrentUser': false,
-    },
-    {
-      'id': '2',
-      'senderName': 'Sarah',
-      'senderAvatar': '⚡',
-      'message': 'Me too! Should we bring anything?',
-      'timestamp': '10:25 AM',
-      'isCurrentUser': false,
-    },
-    {
-      'id': '3',
-      'senderName': 'You',
-      'senderAvatar': '😊',
-      'message': 'Just yourselves and good vibes!',
-      'timestamp': '10:27 AM',
-      'isCurrentUser': true,
-    },
-  ];
-
   @override
   void initState() {
     super.initState();
-    _event = mockEvents.firstWhere((e) => e.id == widget.eventId, orElse: () => mockEvents[0]);
+    final appState = Provider.of<AppState>(context, listen: false);
+    _event = appState.events.firstWhere((e) => e.id == widget.eventId, orElse: () => appState.events.first);
   }
 
   @override
@@ -62,28 +36,14 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   }
 
   void _sendMessage() {
-    if (_messageController.text.trim().isEmpty) return;
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
     
-    setState(() {
-      _messages.add({
-        'id': DateTime.now().toString(),
-        'senderName': 'You',
-        'senderAvatar': '😊',
-        'message': _messageController.text,
-        'timestamp': '${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
-        'isCurrentUser': true,
-      });
-      _messageController.clear();
-    });
-    
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+    _messageController.clear();
+    context.read<AppState>().sendEventMessage(_event.id, text).catchError((e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send message: $e'), backgroundColor: Colors.red),
+      );
     });
   }
 
@@ -91,7 +51,14 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final catColor = AppTheme.categoryColors[_event.category]!;
+    
+    // Refresh event details in case they changed
+    final appState = context.watch<AppState>();
+    final currentEvent = appState.events.firstWhere(
+      (e) => e.id == widget.eventId,
+      orElse: () => _event,
+    );
+    final catColor = AppTheme.categoryColors[currentEvent.category]!;
 
     return Scaffold(
       body: Container(
@@ -119,7 +86,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () => context.read<AppState>().navigateTo('messages'),
+                      onTap: () => appState.navigateTo('messages'),
                       child: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(color: isDark ? Colors.white10 : Colors.black12, shape: BoxShape.circle),
@@ -131,12 +98,12 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(_event.title, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
+                          Text(currentEvent.title, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
                           Row(
                             children: [
                               Icon(LucideIcons.users, size: 12, color: catColor.primary),
                               const SizedBox(width: 4),
-                              Text('${_event.participants} participants', style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12)),
+                              Text('${currentEvent.participants} participants', style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12)),
                             ],
                           )
                         ],
@@ -157,63 +124,115 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
               // Messages Area
               Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = _messages[index];
-                    final isMe = msg['isCurrentUser'] as bool;
+                child: StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: appState.streamEventMessages(currentEvent.id),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(child: Text('Failed to load messages.', style: TextStyle(color: Colors.red[300])));
+                    }
                     
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: Row(
-                        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (!isMe) ...[
-                            Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(color: isDark ? Colors.white10 : Colors.black12, shape: BoxShape.circle),
-                              child: Center(child: Text(msg['senderAvatar'], style: const TextStyle(fontSize: 16))),
-                            ),
-                            const SizedBox(width: 8),
+                    final messages = snapshot.data ?? [];
+
+                    // Auto scroll to bottom
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_scrollController.hasClients) {
+                        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+                      }
+                    });
+
+                    if (messages.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(LucideIcons.messageCircle, size: 48, color: catColor.primary.withOpacity(0.5)),
+                            const SizedBox(height: 12),
+                            Text('No messages yet.', style: TextStyle(color: isDark ? Colors.white54 : Colors.black54)),
+                            Text('Say hello to the group!', style: TextStyle(color: isDark ? Colors.white30 : Colors.black38, fontSize: 12)),
                           ],
-                          Flexible(
-                            child: Column(
-                              crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                              children: [
-                                if (!isMe)
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 4, bottom: 4),
-                                    child: Text(msg['senderName'], style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 10)),
-                                  ),
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final msg = messages[index];
+                        final senderId = msg['senderId'] as String?;
+                        final isMe = senderId == appState.currentUser?.uid;
+                        
+                        String timeText = '';
+                        if (msg['timestamp'] != null) {
+                          final date = (msg['timestamp'] as Timestamp).toDate();
+                          timeText = '${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+                        } else {
+                          timeText = 'Sending...';
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 16.0),
+                          child: Row(
+                            mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (!isMe) ...[
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  width: 32,
+                                  height: 32,
                                   decoration: BoxDecoration(
-                                    color: isMe ? catColor.primary : (isDark ? Colors.white10 : Colors.black12),
-                                    borderRadius: BorderRadius.only(
-                                      topLeft: const Radius.circular(16),
-                                      topRight: const Radius.circular(16),
-                                      bottomLeft: isMe ? const Radius.circular(16) : const Radius.circular(4),
-                                      bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(16),
+                                    color: isDark ? Colors.white10 : Colors.black12,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      msg['senderAvatar'] as String? ?? 'US',
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
                                     ),
                                   ),
-                                  child: Text(
-                                    msg['message'],
-                                    style: TextStyle(color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black)),
-                                  ),
                                 ),
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4, right: 4),
-                                  child: Text(msg['timestamp'], style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 10)),
-                                ),
+                                const SizedBox(width: 8),
                               ],
-                            ),
-                          ),
-                        ],
-                      ).animate().fadeIn().moveY(begin: 10, end: 0),
+                              Flexible(
+                                child: Column(
+                                  crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                  children: [
+                                    if (!isMe)
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 4, bottom: 4),
+                                        child: Text(msg['senderName'] as String? ?? 'User', style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 10)),
+                                      ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      decoration: BoxDecoration(
+                                        color: isMe ? catColor.primary : (isDark ? Colors.white10 : Colors.black12),
+                                        borderRadius: BorderRadius.only(
+                                          topLeft: const Radius.circular(16),
+                                          topRight: const Radius.circular(16),
+                                          bottomLeft: isMe ? const Radius.circular(16) : const Radius.circular(4),
+                                          bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(16),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        msg['message'] as String? ?? '',
+                                        style: TextStyle(color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black)),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4, right: 4),
+                                      child: Text(timeText, style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 10)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ).animate().fadeIn().moveY(begin: 10, end: 0),
+                        );
+                      },
                     );
                   },
                 ),

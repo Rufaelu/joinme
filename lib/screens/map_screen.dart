@@ -8,6 +8,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:geolocator/geolocator.dart';
 import '../providers/app_state.dart';
+import '../models/event_model.dart';
 import '../theme/app_theme.dart';
 import '../data/mock_data.dart';
 import '../widgets/glass_container.dart';
@@ -22,7 +23,7 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   JoinMeEvent? _selectedEvent;
-  final String _searchQuery = '';
+  String _searchQuery = '';
   
   // Addis Ababa coordinates as default
   LatLng _currentLocation = const LatLng(9.0300, 38.7400);
@@ -285,7 +286,12 @@ class _MapScreenState extends State<MapScreen> {
                   userAgentPackageName: 'com.joinme.app',
                 ),
               MarkerLayer(
-                markers: context.watch<AppState>().events.map((event) {
+                markers: context.watch<AppState>().events.where((e) {
+                  if (_searchQuery.trim().isEmpty) return true;
+                  return e.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                         (e.description?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false) ||
+                         e.location.name.toLowerCase().contains(_searchQuery.toLowerCase());
+                }).map((event) {
                   final isSelected = _selectedEvent?.id == event.id;
                   final categoryColor = AppTheme.categoryColors[event.category]!;
                   
@@ -387,6 +393,7 @@ class _MapScreenState extends State<MapScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextField(
+                      onChanged: (val) => setState(() => _searchQuery = val),
                       decoration: InputDecoration(
                         hintText: 'Search events...',
                         border: InputBorder.none,
