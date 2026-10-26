@@ -1,22 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="pin" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#7C5CFF"/>
       <stop offset="1" stop-color="#FF5C8A"/>
     </linearGradient>
-    <clipPath id="disc"><circle cx="256" cy="200" r="118"/></clipPath>
   </defs>
   <!-- map pin -->
-  <path d="M256 36c-92 0-166 72-166 162 0 118 140 248 156 262a15 15 0 0 0 20 0c16-14 156-144 156-262 0-90-74-162-166-162z" fill="url(#pin)"/>
-  <!-- inner disc -->
-  <circle cx="256" cy="200" r="118" fill="#ffffff"/>
-  <g clip-path="url(#disc)">
-    <!-- two friends side by side -->
-    <circle cx="214" cy="176" r="34" fill="#7C5CFF"/>
-    <path d="M144 330 C144 262 176 226 214 226 C252 226 284 262 284 330 Z" fill="#7C5CFF"/>
-    <circle cx="298" cy="176" r="34" fill="#FF5C8A"/>
-    <path d="M228 330 C228 262 260 226 298 226 C336 226 368 262 368 330 Z" fill="#FF5C8A" fill-opacity="0.95"/>
-  </g>
-  <!-- spark above them -->
-  <path d="M256 96 L263 116 L283 123 L263 130 L256 150 L249 130 L229 123 L249 116 Z" fill="url(#pin)"/>
+  <path d="M256 40c-90 0-160 70-160 158 0 112 132 236 148 250a18 18 0 0 0 24 0c16-14 148-138 148-250 0-88-70-158-160-158z" fill="url(#g)"/>
+  <!-- two overlapping rings: people joining up -->
+  <circle cx="222" cy="198" r="58" fill="none" stroke="#ffffff" stroke-width="26"/>
+  <circle cx="290" cy="198" r="58" fill="none" stroke="#ffffff" stroke-width="26"/>
 </svg>
