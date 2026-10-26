@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 import '../services/auth_service.dart';
+import '../services/event_service.dart';
 
 class AppState extends ChangeNotifier {
   final AuthService auth = AuthService();
+  final EventService eventService = EventService();
   late final StreamSubscription<AuthState> _authSub;
 
   bool _isDarkMode = true;
@@ -16,6 +18,12 @@ class AppState extends ChangeNotifier {
 
   bool _isPickingLocation = false;
   PickedLocation? _pickedLocation;
+  List<JoinMeEvent> _events = [];
+  /// Unsaved Create Event form, kept while the user picks a location on the map.
+  Map<String, dynamic>? createFormCache;
+  bool _loadingEvents = false;
+  String? _eventsError;
+  RealtimeChannel? _eventsChannel;
 
   AppState() {
     _currentScreen = auth.isSignedIn ? 'map' : 'login';
@@ -23,6 +31,9 @@ class AppState extends ChangeNotifier {
     _authSub = auth.changes.listen((state) {
       if (state.event == AuthChangeEvent.signedOut) {
         _me = null;
+        _events = [];
+        _pickedLocation = null;
+        _unsubscribeEvents();
         _currentScreen = 'login';
         notifyListeners();
       } else if (state.event == AuthChangeEvent.signedIn) {
@@ -38,6 +49,47 @@ class AppState extends ChangeNotifier {
   bool get isPickingLocation => _isPickingLocation;
   PickedLocation? get pickedLocation => _pickedLocation;
   Profile? get me => _me;
+  List<JoinMeEvent> get events => _events;
+  bool get loadingEvents => _loadingEvents;
+  String? get eventsError => _eventsError;
+
+  Future<void> refreshEvents() async {
+    if (!auth.isSignedIn) return;
+    _loadingEvents = true;
+    notifyListeners();
+    try {
+      _events = await eventService.fetchActive();
+      _eventsError = null;
+    } catch (e) {
+      debugPrint('refreshEvents failed: $e');
+      _eventsError = 'Could not load events';
+    } finally {
+      _loadingEvents = false;
+      notifyListeners();
+    }
+    _eventsChannel ??= eventService.subscribeChanges(_onEventsChanged);
+  }
+
+  Timer? _refreshDebounce;
+  void _onEventsChanged() {
+    _refreshDebounce?.cancel();
+    _refreshDebounce = Timer(const Duration(milliseconds: 500), refreshEvents);
+  }
+
+  void _unsubscribeEvents() {
+    _refreshDebounce?.cancel();
+    final ch = _eventsChannel;
+    _eventsChannel = null;
+    if (ch != null) Supabase.instance.client.removeChannel(ch);
+  }
+
+  /// Saves the event and returns its id.
+  Future<String> createEvent(EventDraft draft) async {
+    final id = await eventService.create(draft);
+    _pickedLocation = null;
+    await refreshEvents();
+    return id;
+  }
 
   Future<void> loadMe() async {
     final uid = auth.userId;
@@ -83,6 +135,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _authSub.cancel();
+    _unsubscribeEvents();
     super.dispose();
   }
 }

@@ -25,7 +25,7 @@ class EventDetailScreen extends StatelessWidget {
       orElse: () => events.isNotEmpty ? events[0] : mockEvents[0],
     );
     
-    final catColors = AppTheme.categoryColors[event.category]!;
+    final catColors = AppTheme.colorsFor(event.category);
     final timeProgress = ((event.duration - event.timeRemaining) / event.duration);
 
     return Scaffold(

@@ -22,6 +22,9 @@ class AppTheme {
   static const Color bluePrimary = Color(0xFF3b82f6); // Tailwind blue-500
   static const Color blueSecondary = Color(0xFF2563eb); // Tailwind blue-600
   
+  static CategoryColors colorsFor(String? category) =>
+      categoryColors[category] ?? categoryColors['creative']!;
+
   static const Map<String, CategoryColors> categoryColors = {
     'sports': CategoryColors(
       primary: yellowPrimary,

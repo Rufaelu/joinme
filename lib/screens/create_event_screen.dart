@@ -5,7 +5,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_container.dart';
-import '../data/mock_data.dart';
+import '../services/event_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 class CreateEventScreen extends StatefulWidget {
   const CreateEventScreen({Key? key}) : super(key: key);
@@ -19,6 +20,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   int _selectedDuration = 60;
   String _title = '';
   DateTime? _selectedDate;
+  TimeOfDay? _selectedTime;
+  bool _saving = false;
   
   final _titleController = TextEditingController();
   final _customCategoryController = TextEditingController();
@@ -39,6 +42,87 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     {'value': 120, 'label': '2h'},
     {'value': 180, 'label': '3h'},
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Restore what was typed before leaving to pick a location on the map.
+    final saved = context.read<AppState>().createFormCache;
+    if (saved != null) {
+      _titleController.text = saved['title'] as String;
+      _title = _titleController.text;
+      _descriptionController.text = saved['description'] as String;
+      _participantsController.text = saved['groupSize'] as String;
+      _selectedCategory = saved['category'] as String;
+      _selectedDuration = saved['duration'] as int;
+      _selectedDate = saved['date'] as DateTime?;
+      _selectedTime = saved['time'] as TimeOfDay?;
+    }
+    if (_participantsController.text.isEmpty) _participantsController.text = '6';
+  }
+
+  void _cacheForm() {
+    context.read<AppState>().createFormCache = {
+      'title': _titleController.text,
+      'description': _descriptionController.text,
+      'groupSize': _participantsController.text,
+      'category': _selectedCategory,
+      'duration': _selectedDuration,
+      'date': _selectedDate,
+      'time': _selectedTime,
+    };
+  }
+
+  TimeOfDay get _defaultTime {
+    final t = DateTime.now().add(const Duration(minutes: 30));
+    final rounded = t.add(Duration(minutes: (5 - t.minute % 5) % 5));
+    return TimeOfDay(hour: rounded.hour, minute: rounded.minute);
+  }
+
+  DateTime get _startsAt {
+    final d = _selectedDate ?? DateTime.now();
+    final t = _selectedTime ?? _defaultTime;
+    var start = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+    // Default time can roll past midnight; keep it in the future.
+    if (_selectedDate == null && _selectedTime == null && start.isBefore(DateTime.now())) {
+      start = start.add(const Duration(days: 1));
+    }
+    return start;
+  }
+
+  EventDraft _draft(PickedLocation? loc) => EventDraft(
+        title: _title,
+        category: _selectedCategory == 'custom' ? 'creative' : _selectedCategory,
+        description: _descriptionController.text,
+        locationName: loc?.name,
+        lat: loc?.lat,
+        lng: loc?.lng,
+        startsAt: _startsAt,
+        durationMinutes: _selectedDuration,
+        groupSize: int.tryParse(_participantsController.text.trim()) ?? 0,
+      );
+
+  Future<void> _submit() async {
+    final appState = context.read<AppState>();
+    final draft = _draft(appState.pickedLocation);
+    final error = draft.validate(DateTime.now());
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final id = await appState.createEvent(draft);
+      appState.createFormCache = null;
+      appState.navigateTo('event', eventId: id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not create event: ${e is PostgrestException ? e.message : e}')),
+      );
+      setState(() => _saving = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -77,7 +161,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     GestureDetector(
-                      onTap: () => context.read<AppState>().navigateTo('map'),
+                      onTap: () {
+                        final appState = context.read<AppState>();
+                        appState.createFormCache = null;
+                        appState.navigateTo('map');
+                      },
                       child: GlassContainer(
                         borderRadius: 30,
                         padding: const EdgeInsets.all(12),
@@ -258,7 +346,34 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                                         Text(
                                           _selectedDate != null 
                                             ? '${_selectedDate!.month}/${_selectedDate!.day}/${_selectedDate!.year}'
-                                            : 'Select Date',
+                                            : 'Today',
+                                          style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 14),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Text('Start time', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 8),
+                                GestureDetector(
+                                  onTap: () async {
+                                    final picked = await showTimePicker(
+                                      context: context,
+                                      initialTime: _selectedTime ?? _defaultTime,
+                                    );
+                                    if (picked != null) {
+                                      setState(() => _selectedTime = picked);
+                                    }
+                                  },
+                                  child: GlassContainer(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                    child: Row(
+                                      children: [
+                                        Icon(LucideIcons.clock, color: Colors.blue[400], size: 20),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          (_selectedTime ?? _defaultTime).format(context),
                                           style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 14),
                                         ),
                                       ],
@@ -274,7 +389,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Max People', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontWeight: FontWeight.bold)),
+                                Text('Per group', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontWeight: FontWeight.bold)),
                                 const SizedBox(height: 8),
                                 GlassContainer(
                                   padding: EdgeInsets.zero,
@@ -284,7 +399,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                                     style: TextStyle(color: isDark ? Colors.white : Colors.black),
                                     decoration: InputDecoration(
                                       prefixIcon: Icon(LucideIcons.users, color: Colors.blue[400], size: 20),
-                                      hintText: "e.g. 10",
+                                      hintText: "e.g. 6",
                                       hintStyle: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
                                       border: InputBorder.none,
                                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -306,6 +421,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                           final loc = appState.pickedLocation;
                           return GestureDetector(
                             onTap: () {
+                              _cacheForm();
                               appState.setPickingLocation(true);
                               appState.navigateTo('map');
                             },
@@ -388,35 +504,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
                       // Submit Button
                       GestureDetector(
-                        onTap: _title.trim().isNotEmpty ? () {
-                          final appState = context.read<AppState>();
-                          final loc = appState.pickedLocation;
-                          
-                          final eventLocation = loc != null 
-                              ? EventLocation(lat: loc.lat, lng: loc.lng, name: loc.name)
-                              : EventLocation(lat: 9.0300, lng: 38.7400, name: 'Addis Ababa');
-                          
-                          final newEvent = JoinMeEvent(
-                            id: DateTime.now().millisecondsSinceEpoch.toString(),
-                            title: _title.trim(),
-                            category: _selectedCategory == 'custom' ? 'creative' : _selectedCategory,
-                            host: EventHost(
-                              name: currentUser['name'] as String,
-                              avatar: currentUser['avatar'] as String,
-                              reliability: currentUser['reliability'] as int,
-                            ),
-                            location: eventLocation,
-                            participants: 1,
-                            maxParticipants: int.tryParse(_participantsController.text) ?? 10,
-                            timeRemaining: 60,
-                            duration: _selectedDuration,
-                            description: _descriptionController.text.trim().isNotEmpty ? _descriptionController.text.trim() : null,
-                            participantAvatars: [currentUser['avatar'] as String],
-                          );
-                          
-                          appState.addEvent(newEvent);
-                          appState.navigateTo('map');
-                        } : null,
+                        onTap: _title.trim().isNotEmpty && !_saving ? _submit : null,
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           width: double.infinity,
@@ -435,7 +523,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                             ] : [],
                           ),
                           child: Center(
-                            child: Text(
+                            child: _saving
+                                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                                : Text(
                               'Create Event',
                               style: TextStyle(
                                 color: _title.trim().isNotEmpty ? Colors.white : (isDark ? Colors.white54 : Colors.black54),

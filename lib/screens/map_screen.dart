@@ -22,7 +22,7 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   JoinMeEvent? _selectedEvent;
-  final String _searchQuery = '';
+  String _searchQuery = '';
   
   // Addis Ababa coordinates as default
   LatLng _currentLocation = const LatLng(9.0300, 38.7400);
@@ -40,12 +40,7 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final events = context.read<AppState>().events;
-      if (events.isNotEmpty && _selectedEvent == null) {
-        setState(() {
-          _selectedEvent = events[0];
-        });
-      }
+      context.read<AppState>().refreshEvents();
     });
     _determinePosition();
   }
@@ -88,6 +83,25 @@ class _MapScreenState extends State<MapScreen> {
       debugPrint('Geolocation error: $e');
       if (mounted) setState(() => _isLoadingLocation = false);
     }
+  }
+
+  List<JoinMeEvent> _visibleEvents(List<JoinMeEvent> events) {
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isEmpty) return events;
+    return events
+        .where((e) =>
+            e.title.toLowerCase().contains(q) ||
+            e.location.name.toLowerCase().contains(q) ||
+            e.category.toLowerCase().contains(q))
+        .toList();
+  }
+
+  String _startLabel(JoinMeEvent event) {
+    if (event.hasStarted) return 'Happening now';
+    final m = event.timeRemaining;
+    if (m < 60) return 'Starts in ${m}m';
+    if (m < 60 * 24) return 'Starts in ${(m / 60).floor()}h ${m % 60}m';
+    return 'Starts in ${(m / (60 * 24)).floor()}d';
   }
 
   void _handlePinClick(JoinMeEvent event) {
@@ -248,6 +262,8 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final appState = context.watch<AppState>();
+    final visibleEvents = _visibleEvents(appState.events);
     
     return Scaffold(
       body: Stack(
@@ -285,9 +301,9 @@ class _MapScreenState extends State<MapScreen> {
                   userAgentPackageName: 'com.joinme.app',
                 ),
               MarkerLayer(
-                markers: context.watch<AppState>().events.map((event) {
+                markers: visibleEvents.map((event) {
                   final isSelected = _selectedEvent?.id == event.id;
-                  final categoryColor = AppTheme.categoryColors[event.category]!;
+                  final categoryColor = AppTheme.colorsFor(event.category);
                   
                   return Marker(
                     point: LatLng(event.location.lat, event.location.lng),
@@ -387,6 +403,7 @@ class _MapScreenState extends State<MapScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextField(
+                      onChanged: (val) => setState(() => _searchQuery = val),
                       decoration: InputDecoration(
                         hintText: 'Search events...',
                         border: InputBorder.none,
@@ -395,11 +412,44 @@ class _MapScreenState extends State<MapScreen> {
                       style: TextStyle(color: isDark ? Colors.white : Colors.black),
                     ),
                   ),
-                  Icon(LucideIcons.zap, color: isDark ? Colors.white54 : Colors.black54),
+                  GestureDetector(
+                    onTap: appState.loadingEvents ? null : () => appState.refreshEvents(),
+                    child: appState.loadingEvents
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Icon(LucideIcons.refreshCw, color: isDark ? Colors.white54 : Colors.black54),
+                  ),
                 ],
               ),
             ),
           ),
+
+          // Empty / error hint
+          if (_selectedEvent == null && !appState.loadingEvents && (appState.eventsError != null || visibleEvents.isEmpty))
+            Positioned(
+              bottom: 16,
+              left: 16,
+              right: 16,
+              child: GlassContainer(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(appState.eventsError != null ? LucideIcons.wifiOff : LucideIcons.mapPin,
+                        color: Colors.yellow[500]),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        appState.eventsError != null
+                            ? '${appState.eventsError}. Tap refresh to retry.'
+                            : _searchQuery.isNotEmpty
+                                ? 'No events match "$_searchQuery"'
+                                : 'No events nearby yet. Long-press the map to create one!',
+                        style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           
           // Event Preview Card
           if (_selectedEvent != null)
@@ -418,7 +468,7 @@ class _MapScreenState extends State<MapScreen> {
   Widget _buildEventCard(JoinMeEvent event) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final categoryColor = AppTheme.categoryColors[event.category]!;
+    final categoryColor = AppTheme.colorsFor(event.category);
     
     return GlassContainer(
       backgroundColor: isDark 
@@ -500,11 +550,15 @@ class _MapScreenState extends State<MapScreen> {
             children: [
               Icon(LucideIcons.users, size: 16, color: categoryColor.primary),
               const SizedBox(width: 4),
-              Text('${event.participants}/${event.maxParticipants}'),
+              Text('${event.participants} going'),
               const SizedBox(width: 16),
               Icon(LucideIcons.clock, size: 16, color: categoryColor.primary),
               const SizedBox(width: 4),
-              Text('${event.timeRemaining}m'),
+              Text(_startLabel(event)),
+              const SizedBox(width: 16),
+              Icon(LucideIcons.star, size: 16, color: Colors.yellow[500]),
+              const SizedBox(width: 4),
+              Text(formatReputation(event.host.reputation)),
             ],
           ),
           const SizedBox(height: 16),

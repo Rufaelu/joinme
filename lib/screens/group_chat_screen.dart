@@ -91,7 +91,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final catColor = AppTheme.categoryColors[_event.category]!;
+    final catColor = AppTheme.colorsFor(_event.category);
 
     return Scaffold(
       body: Container(
