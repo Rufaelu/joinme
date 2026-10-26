@@ -517,10 +517,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     VoidCallback? onTap;
 
     if (event.hasEnded) {
-      if (myGroup != null && !_hasRated) {
+      if (canRate(endsAt: event.endsAt, now: DateTime.now(), isMember: myGroup != null, alreadyRated: _hasRated)) {
         label = 'Rate Event';
         icon = LucideIcons.star;
-        onTap = () => appState.navigateTo('rate', eventId: event.id, groupId: myGroup.id);
+        onTap = () => appState.navigateTo('rate', eventId: event.id, groupId: myGroup!.id);
       } else if (myGroup != null) {
         label = 'Thanks for rating!';
         icon = LucideIcons.checkCircle;

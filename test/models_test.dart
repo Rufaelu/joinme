@@ -88,4 +88,22 @@ void main() {
       expect(JoinMeEvent.fromFeed(row).host.reputation, 4.0);
     });
   });
+
+  group('canRate', () {
+    final endsAt = DateTime(2026, 10, 26, 12);
+    final after = endsAt.add(const Duration(minutes: 1));
+
+    test('member who has not rated can rate after the end', () {
+      expect(canRate(endsAt: endsAt, now: after, isMember: true, alreadyRated: false), isTrue);
+    });
+    test('cannot rate before the event ends', () {
+      expect(canRate(endsAt: endsAt, now: endsAt.subtract(const Duration(minutes: 1)), isMember: true, alreadyRated: false), isFalse);
+    });
+    test('non-members cannot rate', () {
+      expect(canRate(endsAt: endsAt, now: after, isMember: false, alreadyRated: false), isFalse);
+    });
+    test('cannot rate twice', () {
+      expect(canRate(endsAt: endsAt, now: after, isMember: true, alreadyRated: true), isFalse);
+    });
+  });
 }

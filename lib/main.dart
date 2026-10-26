@@ -17,6 +17,7 @@ import 'screens/notifications_screen.dart';
 import 'screens/messages_screen.dart';
 import 'screens/group_chat_screen.dart';
 import 'screens/direct_chat_screen.dart';
+import 'screens/rate_event_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -96,6 +97,8 @@ class AppNavigator extends StatelessWidget {
         return const MessagesScreen();
       case 'chat':
         return GroupChatScreen(key: ValueKey('chat-$groupId'), eventId: eventId, groupId: groupId);
+      case 'rate':
+        return RateEventScreen(key: ValueKey('rate-$eventId'), eventId: eventId, groupId: groupId);
       case 'directChat':
         return const DirectChatScreen();
       default:

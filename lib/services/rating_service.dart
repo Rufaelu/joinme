@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PastEvent {
   final String eventId;
+  final String groupId;
   final String title;
   final String category;
   final DateTime endedAt;
@@ -9,6 +10,7 @@ class PastEvent {
 
   PastEvent({
     required this.eventId,
+    required this.groupId,
     required this.title,
     required this.category,
     required this.endedAt,
@@ -58,7 +60,7 @@ class RatingService {
     if (uid == null) return [];
     final rows = await _db
         .from('group_members')
-        .select('event_groups(events(id, title, category, ends_at))')
+        .select('group_id, event_groups(events(id, title, category, ends_at))')
         .eq('user_id', uid);
     final rated = (await _db.from('event_ratings').select('event_id').eq('rater_id', uid))
         .map((r) => r['event_id'] as String)
@@ -73,6 +75,7 @@ class RatingService {
       final id = ev['id'] as String;
       byId[id] = PastEvent(
         eventId: id,
+        groupId: r['group_id'] as String,
         title: ev['title'] as String,
         category: ev['category'] as String,
         endedAt: endedAt,

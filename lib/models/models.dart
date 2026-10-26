@@ -13,6 +13,14 @@ String initialsOf(String name) {
 
 String formatReputation(double? rep) => rep == null ? 'New' : rep.toStringAsFixed(1);
 
+bool canRate({
+  required DateTime endsAt,
+  required DateTime now,
+  required bool isMember,
+  required bool alreadyRated,
+}) =>
+    isMember && !alreadyRated && now.isAfter(endsAt);
+
 double? _toDouble(dynamic v) => v == null ? null : (v as num).toDouble();
 
 class EventHost {

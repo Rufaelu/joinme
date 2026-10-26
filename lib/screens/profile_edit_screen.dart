@@ -4,7 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/app_state.dart';
 import '../widgets/glass_container.dart';
-import '../data/mock_data.dart';
+import '../models/models.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({Key? key}) : super(key: key);
@@ -15,17 +15,39 @@ class ProfileEditScreen extends StatefulWidget {
 
 class _ProfileEditScreenState extends State<ProfileEditScreen> {
   late TextEditingController _nameController;
+  late TextEditingController _bioController;
+  bool _saving = false;
   
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: currentUser['name'] as String);
+    final me = context.read<AppState>().me;
+    _nameController = TextEditingController(text: me?.name ?? '');
+    _bioController = TextEditingController(text: me?.bio ?? '');
   }
   
   @override
   void dispose() {
     _nameController.dispose();
+    _bioController.dispose();
     super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name cannot be empty')));
+      return;
+    }
+    final appState = context.read<AppState>();
+    setState(() => _saving = true);
+    try {
+      await appState.updateProfile(name: _nameController.text, bio: _bioController.text);
+      appState.navigateTo('profile');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not save. Try again.')));
+      setState(() => _saving = false);
+    }
   }
 
   @override
@@ -98,19 +120,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                             ),
                             child: Center(
                               child: Text(
-                                currentUser['avatar'] as String,
+                                initialsOf(_nameController.text),
                                 style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold),
                               ),
                             ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.blue[500],
-                              shape: BoxShape.circle,
-                              border: Border.all(color: isDark ? const Color(0xFF1a363d) : Colors.white, width: 4),
-                            ),
-                            child: const Icon(LucideIcons.camera, color: Colors.white, size: 20),
                           ),
                         ],
                       ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
@@ -127,6 +140,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         padding: EdgeInsets.zero,
                         child: TextField(
                           controller: _nameController,
+                          onChanged: (_) => setState(() {}),
                           style: TextStyle(color: isDark ? Colors.white : Colors.black),
                           decoration: InputDecoration(
                             border: InputBorder.none,
@@ -135,12 +149,34 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                           ),
                         ),
                       ).animate().fadeIn(delay: 100.ms).moveY(begin: 20, end: 0, duration: 400.ms),
+
+                      const SizedBox(height: 24),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text('Bio', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontWeight: FontWeight.bold)),
+                      ),
+                      const SizedBox(height: 8),
+                      GlassContainer(
+                        padding: EdgeInsets.zero,
+                        child: TextField(
+                          controller: _bioController,
+                          maxLines: 3,
+                          maxLength: 200,
+                          style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(16),
+                            hintText: 'A line about you — what you like to do',
+                            hintStyle: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
+                          ),
+                        ),
+                      ),
                       
                       const SizedBox(height: 48),
 
                       // Save Button
                       GestureDetector(
-                        onTap: () => context.read<AppState>().navigateTo('profile'),
+                        onTap: _saving ? null : _save,
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 16),
@@ -155,8 +191,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               )
                             ],
                           ),
-                          child: const Center(
-                            child: Text(
+                          child: Center(
+                            child: _saving
+                                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                                : const Text(
                               'Save Changes',
                               style: TextStyle(
                                 color: Colors.white,

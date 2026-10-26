@@ -4,16 +4,35 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
+import '../models/models.dart';
+import '../services/rating_service.dart';
 import '../widgets/glass_container.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  late Future<List<PastEvent>> _pastEvents;
+
+  @override
+  void initState() {
+    super.initState();
+    final appState = context.read<AppState>();
+    appState.loadMe();
+    _pastEvents = appState.ratings.myPastEvents();
+  }
+
+  String _date(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final me = context.watch<AppState>().me;
 
     return Scaffold(
       body: Container(
@@ -91,25 +110,34 @@ class ProfileScreen extends StatelessWidget {
                         ),
                         child: Center(
                           child: Text(
-                            currentUser['avatar'] as String,
+                            me?.initials ?? '…',
                             style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
                       const SizedBox(height: 16),
                       Text(
-                        currentUser['name'] as String,
+                        me?.name ?? '',
                         style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black),
                       ).animate().fadeIn(delay: 100.ms).moveY(begin: 20, end: 0, duration: 400.ms),
+                      if (me?.bio != null && me!.bio!.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          me.bio!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+                        ),
+                      ],
                       const SizedBox(height: 32),
 
                       // Stats Row
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _buildStatItem(isDark, LucideIcons.star, '${currentUser['reliability']}%', 'Reliability', Colors.yellow[500]!),
-                          _buildStatItem(isDark, LucideIcons.calendarCheck, '${currentUser['eventsAttended']}', 'Attended', Colors.blue[400]!),
-                          _buildStatItem(isDark, LucideIcons.calendarPlus, '${currentUser['eventsHosted']}', 'Hosted', Colors.purple[400]!),
+                          _buildStatItem(isDark, LucideIcons.star, formatReputation(me?.reputation),
+                              me == null || me.ratingCount == 0 ? 'Reputation' : 'Reputation (${me.ratingCount})', Colors.yellow[500]!),
+                          _buildStatItem(isDark, LucideIcons.calendarCheck, '${me?.eventsAttended ?? 0}', 'Attended', Colors.blue[400]!),
+                          _buildStatItem(isDark, LucideIcons.calendarPlus, '${me?.eventsHosted ?? 0}', 'Hosted', Colors.purple[400]!),
                         ],
                       ).animate().fadeIn(delay: 200.ms).moveY(begin: 20, end: 0, duration: 400.ms),
                       const SizedBox(height: 32),
@@ -143,8 +171,22 @@ class ProfileScreen extends StatelessWidget {
                       ).animate().fadeIn(delay: 500.ms),
                       const SizedBox(height: 16),
                       
-                      ...(currentUser['pastEvents'] as List).map((event) {
-                        final catColor = AppTheme.categoryColors[event['category']]!;
+                      FutureBuilder<List<PastEvent>>(
+                        future: _pastEvents,
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return snapshot.hasError
+                                ? Text('Could not load past events', style: TextStyle(color: isDark ? Colors.white54 : Colors.black54))
+                                : const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator());
+                          }
+                          final past = snapshot.data!;
+                          if (past.isEmpty) {
+                            return Text('No past events yet. Join one from the map!',
+                                style: TextStyle(color: isDark ? Colors.white54 : Colors.black54));
+                          }
+                          return Column(
+                            children: past.map((event) {
+                        final catColor = AppTheme.colorsFor(event.category);
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12.0),
                           child: GlassContainer(
@@ -165,16 +207,28 @@ class ProfileScreen extends StatelessWidget {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(event['title']!, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
-                                      Text(event['date']!, style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12)),
+                                      Text(event.title, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
+                                      Text(_date(event.endedAt), style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12)),
                                     ],
                                   ),
                                 ),
+                                if (!event.rated)
+                                  GestureDetector(
+                                    onTap: () => context.read<AppState>().navigateTo('rate', eventId: event.eventId, groupId: event.groupId),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      decoration: BoxDecoration(color: Colors.yellow[500], borderRadius: BorderRadius.circular(12)),
+                                      child: const Text('Rate', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
                         ).animate().fadeIn(delay: 600.ms).moveY(begin: 20, end: 0, duration: 400.ms);
-                      }).toList(),
+                            }).toList(),
+                          );
+                        },
+                      ),
                       
                       const SizedBox(height: 32),
                       

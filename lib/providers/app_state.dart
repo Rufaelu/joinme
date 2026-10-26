@@ -115,6 +115,17 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> updateProfile({required String name, String? bio}) async {
+    final uid = auth.userId;
+    if (uid == null) return;
+    final trimmedBio = bio?.trim();
+    await Supabase.instance.client.from('profiles').update({
+      'name': name.trim(),
+      'bio': (trimmedBio == null || trimmedBio.isEmpty) ? null : trimmedBio,
+    }).eq('id', uid);
+    await loadMe();
+  }
+
   void toggleTheme() {
     _isDarkMode = !_isDarkMode;
     notifyListeners();
