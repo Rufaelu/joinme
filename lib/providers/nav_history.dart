@@ -13,10 +13,10 @@ class NavHistory {
   static const maxDepth = 20;
 
   /// Screens that start a fresh history: back from them leaves the app.
-  static const _roots = {'map', 'login', 'onboarding', 'resetPassword'};
+  static const _roots = {'map', 'login', 'onboarding', 'resetPassword', 'restoreAccount'};
 
   /// Screens that are never returned to with back.
-  static const _transient = {'login', 'onboarding', 'resetPassword'};
+  static const _transient = {'login', 'onboarding', 'resetPassword', 'restoreAccount'};
 
   final List<NavEntry> _stack = [];
 

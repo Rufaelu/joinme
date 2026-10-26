@@ -16,6 +16,8 @@ class NotificationsScreen extends StatelessWidget {
     'friend_accepted': LucideIcons.userCheck,
     'event_joined': LucideIcons.users,
     'direct_message': LucideIcons.messageCircle,
+    'account_deleted': LucideIcons.userX,
+    'account_restored': LucideIcons.userCheck,
   };
 
   String _ago(DateTime t) {

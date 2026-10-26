@@ -72,6 +72,9 @@ class _PersonSheetState extends State<_PersonSheet> {
     Widget action;
     if (p == null) {
       action = const SizedBox.shrink();
+    } else if (p.isDeleted) {
+      action = Text('This person deleted their account',
+          style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 15));
     } else {
       final (label, icon, onTap) = switch (p.relation) {
         FriendRelation.none => ('Add friend', LucideIcons.userPlus, () => _run(() async => social.addFriend(p.id))),
@@ -130,7 +133,8 @@ class _PersonSheetState extends State<_PersonSheet> {
                 children: [
                   Avatar(name: p.name, url: p.avatarUrl, size: 80),
                   const SizedBox(height: 12),
-                  Text(p.name,
+                  Text(p.displayName,
+                      textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black)),
                   const SizedBox(height: 4),
                   Row(

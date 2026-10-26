@@ -25,6 +25,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
   Stream<List<DirectMessage>>? _messages;
   int _lastCount = 0;
   bool _sending = false;
+  bool _friendDeleted = false;
 
   @override
   void initState() {
@@ -34,7 +35,12 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     _friendId = friend?['id'] as String?;
     _friendName = friend?['name'] as String? ?? 'Friend';
     _friendAvatar = friend?['avatarUrl'] as String?;
+    _friendDeleted = friend?['deleted'] == true;
     if (_friendId != null) {
+      // Confirm from the database in case they deleted their account since.
+      appState.social.person(_friendId!).then((p) {
+        if (mounted && p.isDeleted != _friendDeleted) setState(() => _friendDeleted = p.isDeleted);
+      }).catchError((_) {});
       _messages = appState.social.directMessages(_friendId!);
       appState.social.markChatRead(_friendId!).catchError((_) {});
     }
@@ -126,7 +132,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        _friendName,
+                        _friendDeleted ? '$_friendName · Deleted account' : _friendName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
@@ -171,6 +177,18 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                       ),
               ),
 
+              if (_friendDeleted)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  color: isDark ? Colors.black26 : Colors.white60,
+                  child: Text(
+                    '$_friendName deleted their account. You can read your old messages, but not send new ones.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
+                  ),
+                )
+              else
               // Input
               Container(
                 decoration: BoxDecoration(

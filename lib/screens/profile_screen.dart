@@ -27,6 +27,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _pastEvents = appState.ratings.myPastEvents();
   }
 
+  Future<void> _confirmDelete(BuildContext context) async {
+    final controller = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Delete your account?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your friends and the people you\'ve met will be told you deleted your account. '
+                'You\'ll leave your upcoming groups and disappear from search and the map.\n\n'
+                'You can restore it by signing in again within 30 days.',
+              ),
+              const SizedBox(height: 16),
+              const Text('Type DELETE to confirm', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                textCapitalization: TextCapitalization.characters,
+                onChanged: (_) => setLocal(() {}),
+                decoration: const InputDecoration(hintText: 'DELETE'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(
+              onPressed: controller.text.trim() == 'DELETE' ? () => Navigator.pop(ctx, true) : null,
+              child: Text('Delete account', style: TextStyle(color: controller.text.trim() == 'DELETE' ? Colors.red[400] : null)),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (ok != true || !context.mounted) return;
+    try {
+      await context.read<AppState>().auth.deleteAccount();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not delete the account. Try again.')));
+      }
+    }
+  }
+
   String _date(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   @override
@@ -229,6 +278,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           style: TextStyle(color: Colors.red[400], fontWeight: FontWeight.bold, fontSize: 16),
                         ),
                       ).animate().fadeIn(delay: 800.ms),
+                      const SizedBox(height: 20),
+                      GestureDetector(
+                        onTap: () => _confirmDelete(context),
+                        child: Text(
+                          'Delete account',
+                          style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 14),
+                        ),
+                      ).animate().fadeIn(delay: 850.ms),
                       const SizedBox(height: 32),
                     ],
                   ),

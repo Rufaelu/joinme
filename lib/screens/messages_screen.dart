@@ -85,7 +85,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
       ..._threads.map((t) => {
         'id': t.friend.id,
         'type': 'friend',
-        'name': t.friend.name,
+        'name': t.friend.displayName,
+        'rawName': t.friend.name,
+        'deleted': t.friend.isDeleted,
         'avatar': initialsOf(t.friend.name),
         'avatarUrl': t.friend.avatarUrl,
         'lastMessage': t.lastMessage ?? 'Say hi 👋',
@@ -244,8 +246,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                 } else {
                                   context.read<AppState>().navigateTo('directChat', friendData: {
                                     'id': chat['id'],
-                                    'name': chat['name'],
+                                    'name': chat['rawName'],
                                     'avatarUrl': chat['avatarUrl'],
+                                    'deleted': chat['deleted'],
                                   });
                                 }
                               },

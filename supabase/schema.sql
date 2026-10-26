@@ -75,6 +75,8 @@ create table if not exists public.user_ratings (
 -- Photos (added later; "if not exists" keeps re-runs safe on existing tables)
 alter table public.profiles add column if not exists avatar_url text;
 alter table public.events add column if not exists image_url text;
+-- Soft delete: the profile stays, marked with when the account was deleted.
+alter table public.profiles add column if not exists deleted_at timestamptz;
 
 create index if not exists events_ends_at_idx on public.events (ends_at);
 create index if not exists event_groups_event_idx on public.event_groups (event_id);
@@ -106,6 +108,11 @@ as $$
     where g.event_id = e and gm.user_id = u
   );
 $$;
+
+create or replace function public.is_deleted(u uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$ select coalesce((select deleted_at is not null from public.profiles where id = u), false); $$;
 
 create or replace function public.shares_group(e uuid, a uuid, b uuid)
 returns boolean
@@ -185,6 +192,9 @@ begin
   if auth.uid() is null then
     raise exception 'You must be signed in';
   end if;
+  if public.is_deleted(auth.uid()) then
+    raise exception 'This account was deleted';
+  end if;
 
   -- lock the event row so concurrent joins serialize
   select * into ev from public.events where id = p_event_id for update;
@@ -193,6 +203,9 @@ begin
   end if;
   if ev.ends_at <= now() then
     raise exception 'This event has ended';
+  end if;
+  if public.is_deleted(ev.host_id) then
+    raise exception 'This event is no longer available';
   end if;
 
   select gm.group_id into gid
@@ -283,6 +296,7 @@ select
   p.name,
   p.bio,
   p.avatar_url,
+  p.deleted_at,
   (select round(avg(r.s), 1) from received r where r.uid = p.id) as reputation,
   (select count(*) from received r where r.uid = p.id)::int as rating_count,
   (select count(*) from public.events e where e.host_id = p.id)::int as events_hosted,
@@ -301,6 +315,7 @@ select
   e.*,
   ps.name as host_name,
   ps.avatar_url as host_avatar_url,
+  ps.deleted_at as host_deleted_at,
   ps.reputation as host_reputation,
   ps.rating_count as host_rating_count,
   (
@@ -341,7 +356,7 @@ create policy "events readable" on public.events
   for select to authenticated using (true);
 drop policy if exists "events insert own" on public.events;
 create policy "events insert own" on public.events
-  for insert to authenticated with check (host_id = auth.uid());
+  for insert to authenticated with check (host_id = auth.uid() and not public.is_deleted(auth.uid()));
 -- No update policy: events can't be edited, so a host can't move the end time
 -- to open rating early or reopen a finished event.
 drop policy if exists "events update own" on public.events;
@@ -369,7 +384,7 @@ create policy "messages read by members" on public.messages
 drop policy if exists "messages send by members" on public.messages;
 create policy "messages send by members" on public.messages
   for insert to authenticated
-  with check (sender_id = auth.uid() and public.is_group_member(group_id));
+  with check (sender_id = auth.uid() and public.is_group_member(group_id) and not public.is_deleted(auth.uid()));
 
 -- event ratings: once, by a member, after the event ended. The host leaves host_score empty.
 -- Only your own ratings are readable; everyone else sees averages via profile_stats.
@@ -482,6 +497,7 @@ declare
 begin
   if auth.uid() is null then raise exception 'You must be signed in'; end if;
   if p_user = auth.uid() then raise exception 'You cannot add yourself'; end if;
+  if public.is_deleted(p_user) or public.is_deleted(auth.uid()) then raise exception 'This account was deleted'; end if;
 
   select * into existing from public.friendships f
   where least(f.requester_id, f.addressee_id) = least(auth.uid(), p_user)
@@ -561,7 +577,12 @@ create policy "dms readable by both" on public.direct_messages
 drop policy if exists "dms sent to friends" on public.direct_messages;
 create policy "dms sent to friends" on public.direct_messages
   for insert to authenticated
-  with check (sender_id = auth.uid() and public.are_friends(sender_id, recipient_id));
+  with check (
+    sender_id = auth.uid()
+    and public.are_friends(sender_id, recipient_id)
+    and not public.is_deleted(sender_id)
+    and not public.is_deleted(recipient_id)
+  );
 
 -- ---------------------------------------------------------------------------
 -- Notifications: written by triggers, read (and marked read) by their owner.
@@ -578,6 +599,11 @@ create table if not exists public.notifications (
   created_at timestamptz not null default now()
 );
 create index if not exists notifications_user_idx on public.notifications (user_id, created_at desc);
+-- Widen the allowed types on tables created by an earlier run of this file.
+alter table public.notifications drop constraint if exists notifications_type_check;
+alter table public.notifications add constraint notifications_type_check check (type in (
+  'friend_request', 'friend_accepted', 'event_joined', 'direct_message', 'account_deleted', 'account_restored'
+));
 
 alter table public.notifications enable row level security;
 drop policy if exists "notifications own" on public.notifications;
@@ -665,6 +691,121 @@ drop trigger if exists direct_message_notify on public.direct_messages;
 create trigger direct_message_notify
   after insert on public.direct_messages
   for each row execute function public.on_direct_message();
+
+-- ---------------------------------------------------------------------------
+-- Account deletion (soft). Nothing is erased: the profile is marked deleted,
+-- contacts are notified, and every deletion/restore is written to account_events.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.account_events (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  action text not null check (action in ('deleted', 'restored')),
+  notified_count int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists account_events_user_idx on public.account_events (user_id, created_at desc);
+-- Admin log: readable in the Supabase dashboard, not by app users.
+alter table public.account_events enable row level security;
+revoke all on public.account_events from anon, authenticated;
+
+-- Everyone who should hear about it: friends, direct-message partners and group mates.
+create or replace function public.contacts_of(u uuid)
+returns setof uuid
+language sql stable security definer set search_path = ''
+as $$
+  select distinct x from (
+    select case when f.requester_id = u then f.addressee_id else f.requester_id end
+    from public.friendships f
+    where f.status = 'accepted' and u in (f.requester_id, f.addressee_id)
+    union
+    select case when d.sender_id = u then d.recipient_id else d.sender_id end
+    from public.direct_messages d
+    where u in (d.sender_id, d.recipient_id)
+    union
+    select gb.user_id
+    from public.group_members ga
+    join public.group_members gb on gb.group_id = ga.group_id
+    where ga.user_id = u
+  ) s(x)
+  where x <> u and not public.is_deleted(x);
+$$;
+revoke execute on function public.contacts_of(uuid) from public, anon, authenticated;
+
+create or replace function public.delete_my_account()
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  me uuid := auth.uid();
+  who text;
+  contacts uuid[];
+  c uuid;
+begin
+  if me is null then raise exception 'You must be signed in'; end if;
+  if public.is_deleted(me) then return; end if;
+
+  who := public.profile_name(me);
+  -- Collect contacts first, while upcoming group memberships still exist.
+  select coalesce(array_agg(x), '{}') into contacts from public.contacts_of(me) x;
+
+  update public.profiles set deleted_at = now() where id = me;
+
+  -- Free their spots in groups for events that haven't ended yet.
+  delete from public.group_members gm
+  using public.event_groups g, public.events e
+  where gm.group_id = g.id and g.event_id = e.id and gm.user_id = me and e.ends_at > now();
+
+  -- Open friend requests can no longer be answered.
+  delete from public.friendships
+  where status = 'pending' and me in (requester_id, addressee_id);
+
+  foreach c in array contacts loop
+    perform public.notify(c, 'account_deleted', me, null, who || ' deleted their account');
+  end loop;
+
+  insert into public.account_events (user_id, action, notified_count)
+  values (me, 'deleted', coalesce(array_length(contacts, 1), 0));
+end;
+$$;
+
+-- Undo a deletion within 30 days.
+create or replace function public.restore_my_account()
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  me uuid := auth.uid();
+  deleted timestamptz;
+  who text;
+  contacts uuid[];
+  c uuid;
+begin
+  if me is null then raise exception 'You must be signed in'; end if;
+  select deleted_at into deleted from public.profiles where id = me;
+  if deleted is null then return; end if;
+  if deleted < now() - interval '30 days' then
+    raise exception 'This account was deleted more than 30 days ago and can no longer be restored';
+  end if;
+
+  update public.profiles set deleted_at = null where id = me;
+  who := public.profile_name(me);
+  select coalesce(array_agg(x), '{}') into contacts from public.contacts_of(me) x;
+  foreach c in array contacts loop
+    perform public.notify(c, 'account_restored', me, null, who || ' is back on JoinMe');
+  end loop;
+
+  insert into public.account_events (user_id, action, notified_count)
+  values (me, 'restored', coalesce(array_length(contacts, 1), 0));
+end;
+$$;
+
+revoke execute on function public.is_deleted(uuid) from public, anon;
+grant execute on function public.is_deleted(uuid) to authenticated;
+revoke execute on function public.delete_my_account() from public, anon;
+revoke execute on function public.restore_my_account() from public, anon;
+grant execute on function public.delete_my_account() to authenticated;
+grant execute on function public.restore_my_account() to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Realtime

@@ -75,4 +75,13 @@ class AuthService {
       _db.auth.updateUser(UserAttributes(password: newPassword));
 
   Future<void> signOut() => _db.auth.signOut();
+
+  /// Soft delete: marks the account deleted, notifies contacts, logs it, signs out.
+  Future<void> deleteAccount() async {
+    await _db.rpc('delete_my_account');
+    await _db.auth.signOut();
+  }
+
+  /// Undoes a deletion (within 30 days).
+  Future<void> restoreAccount() => _db.rpc('restore_my_account');
 }

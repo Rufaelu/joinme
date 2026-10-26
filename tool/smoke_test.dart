@@ -272,6 +272,31 @@ Future<void> main() async {
   await expectError(() => a.from('direct_messages').insert({'recipient_id': uid(b), 'body': 'still there?'}),
       'after unfriending, messaging is blocked', contains: rls);
 
+  // --- Soft account deletion
+  await b.rpc('delete_my_account');
+  final bStats = await a.from('profile_stats').select('deleted_at').eq('id', uid(b)).single();
+  check(bStats['deleted_at'] != null, 'deleted account is kept, marked deleted (soft delete)');
+  final aDeletedNote = await a.from('notifications').select('body').eq('type', 'account_deleted').eq('actor_id', uid(b));
+  check(aDeletedNote.length == 1 && (aDeletedNote.first['body'] as String).contains('deleted their account'),
+      'people they interacted with are notified');
+  final searchDeleted =
+      await a.from('profile_stats').select('id').ilike('name', '%Bob Smoke%').isFilter('deleted_at', null);
+  check(searchDeleted.isEmpty, 'deleted accounts disappear from people search');
+  await expectError(() => a.rpc('send_friend_request', params: {'p_user': uid(b)}),
+      "can't friend a deleted account", contains: 'This account was deleted');
+  await expectError(() => b.rpc('join_event', params: {'p_event_id': ev2}), "a deleted account can't join events",
+      contains: 'This account was deleted');
+  await expectError(() => a.from('account_events').select(), 'the deletion log is not readable by app users',
+      contains: '42501');
+  final bOldChat = await b.from('messages').select('id').eq('group_id', aGroup);
+  check(bOldChat.isNotEmpty, 'group chat history is kept after deletion');
+
+  await b.rpc('restore_my_account');
+  final bRestored = await a.from('profile_stats').select('deleted_at').eq('id', uid(b)).single();
+  check(bRestored['deleted_at'] == null, 'account can be restored');
+  final backNote = await a.from('notifications').select('body').eq('type', 'account_restored').eq('actor_id', uid(b));
+  check(backNote.length == 1, 'people are told when the account is back');
+
   // --- Photos (Supabase Storage)
   final png = Uint8List.fromList(base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));

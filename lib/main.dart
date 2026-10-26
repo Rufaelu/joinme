@@ -19,6 +19,7 @@ import 'screens/group_chat_screen.dart';
 import 'screens/direct_chat_screen.dart';
 import 'screens/rate_event_screen.dart';
 import 'screens/reset_password_screen.dart';
+import 'screens/restore_account_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -83,6 +84,8 @@ class AppNavigator extends StatelessWidget {
     switch (screen) {
       case 'login':
         return const LoginSignupScreen();
+      case 'restoreAccount':
+        return const RestoreAccountScreen();
       case 'resetPassword':
         return const ResetPasswordScreen();
       case 'onboarding':

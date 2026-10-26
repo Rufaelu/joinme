@@ -24,7 +24,7 @@ class SocialService {
     };
     final stats = await _db
         .from('profile_stats')
-        .select('id, name, avatar_url, reputation, rating_count')
+        .select('id, name, avatar_url, reputation, rating_count, deleted_at')
         .inFilter('id', relationById.keys.toList());
     return stats.map((s) => Person.fromStats(s, relation: relationById[s['id']]!)).toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -36,9 +36,10 @@ class SocialService {
     if (q.length < 2) return [];
     final rows = await _db
         .from('profile_stats')
-        .select('id, name, avatar_url, reputation, rating_count')
+        .select('id, name, avatar_url, reputation, rating_count, deleted_at')
         .ilike('name', '%${q.replaceAll('%', '').replaceAll('_', '')}%')
         .neq('id', _me)
+        .isFilter('deleted_at', null)
         .limit(20);
     final known = {for (final p in await connections()) p.id: p.relation};
     return rows.map((r) => Person.fromStats(r, relation: known[r['id']] ?? FriendRelation.none)).toList();
@@ -47,7 +48,7 @@ class SocialService {
   Future<Person> person(String userId) async {
     final row = await _db
         .from('profile_stats')
-        .select('id, name, avatar_url, reputation, rating_count')
+        .select('id, name, avatar_url, reputation, rating_count, deleted_at')
         .eq('id', userId)
         .single();
     return Person.fromStats(row, relation: await relationWith(userId));

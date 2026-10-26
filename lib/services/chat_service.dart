@@ -35,7 +35,7 @@ class ChatService {
   Future<List<EventGroup>> groupsFor(String eventId) async {
     final rows = await _db
         .from('event_groups')
-        .select('id, event_id, number, group_members(user_id, joined_at, profiles(name, avatar_url))')
+        .select('id, event_id, number, group_members(user_id, joined_at, profiles(name, avatar_url, deleted_at))')
         .eq('event_id', eventId)
         .order('number');
     return rows.map((g) {
@@ -51,9 +51,10 @@ class ChatService {
           final profile = m['profiles'] as Map<String, dynamic>?;
           final name = profile?['name'] as String? ?? 'Someone';
           final avatar = profile?['avatar_url'] as String?;
-          _names[m['user_id'] as String] = name;
+          final deleted = profile?['deleted_at'] != null;
+          _names[m['user_id'] as String] = shownName(name, parseTime(profile?['deleted_at']));
           _avatars[m['user_id'] as String] = avatar;
-          return GroupMember(id: m['user_id'] as String, name: name, avatarUrl: avatar);
+          return GroupMember(id: m['user_id'] as String, name: name, avatarUrl: avatar, isDeleted: deleted);
         }).toList(),
       );
     }).toList();
@@ -73,9 +74,9 @@ class ChatService {
   Future<void> _resolveNames(Iterable<String> ids) async {
     final missing = ids.where((id) => !_names.containsKey(id)).toSet().toList();
     if (missing.isEmpty) return;
-    final rows = await _db.from('profiles').select('id, name, avatar_url').inFilter('id', missing);
+    final rows = await _db.from('profiles').select('id, name, avatar_url, deleted_at').inFilter('id', missing);
     for (final r in rows) {
-      _names[r['id'] as String] = r['name'] as String;
+      _names[r['id'] as String] = shownName(r['name'] as String, parseTime(r['deleted_at']));
       _avatars[r['id'] as String] = r['avatar_url'] as String?;
     }
   }

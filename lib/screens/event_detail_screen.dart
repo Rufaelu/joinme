@@ -418,7 +418,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(isHost ? '${event.host.name} (you)' : event.host.name,
+                              Text(isHost ? '${event.host.name} (you)' : event.host.displayName,
                                   style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
                               Row(
                                 children: [
@@ -523,10 +523,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             runSpacing: 8,
             children: [
               ...g.members.map((m) => Tooltip(
-                    message: m.name,
+                    message: m.isDeleted ? '${m.name} · Deleted account' : m.name,
                     child: GestureDetector(
                       onTap: () => showPersonSheet(context, m.id),
-                      child: Avatar(name: m.name, url: m.avatarUrl, size: 40),
+                      child: Opacity(opacity: m.isDeleted ? .4 : 1, child: Avatar(name: m.name, url: m.avatarUrl, size: 40)),
                     ),
                   )),
               ...List.generate((event.groupSize - g.members.length).clamp(0, 8), (index) {

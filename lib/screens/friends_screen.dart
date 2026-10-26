@@ -300,13 +300,13 @@ class _FriendsScreenState extends State<FriendsScreen> {
         ),
         child: Row(
           children: [
-            Avatar(name: p.name, url: p.avatarUrl, size: 48),
+            Opacity(opacity: p.isDeleted ? .45 : 1, child: Avatar(name: p.name, url: p.avatarUrl, size: 48)),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(p.name,
+                  Text(p.displayName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
@@ -339,6 +339,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
   }
 
   List<Widget> _actions(Person p, bool isDark, SocialService social) {
+    if (p.isDeleted) return [];
     switch (p.relation) {
       case FriendRelation.friends:
         return [

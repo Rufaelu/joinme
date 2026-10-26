@@ -1,4 +1,5 @@
 // Friends, direct messages, notifications and map place search.
+import 'models.dart' show shownName, parseTime;
 
 /// Key shared by both directions of a direct-message chat. Must match the
 /// `pair_key` column in supabase/schema.sql (smaller uuid first).
@@ -24,6 +25,7 @@ class Person {
   final double? reputation;
   final int ratingCount;
   final FriendRelation relation;
+  final DateTime? deletedAt;
 
   Person({
     required this.id,
@@ -32,7 +34,11 @@ class Person {
     this.reputation,
     this.ratingCount = 0,
     this.relation = FriendRelation.none,
+    this.deletedAt,
   });
+
+  bool get isDeleted => deletedAt != null;
+  String get displayName => shownName(name, deletedAt);
 
   Person withRelation(FriendRelation r) => Person(
         id: id,
@@ -41,6 +47,7 @@ class Person {
         reputation: reputation,
         ratingCount: ratingCount,
         relation: r,
+        deletedAt: deletedAt,
       );
 
   factory Person.fromStats(Map<String, dynamic> row, {FriendRelation relation = FriendRelation.none}) {
@@ -52,6 +59,7 @@ class Person {
       reputation: rep == null ? null : (rep as num).toDouble(),
       ratingCount: (row['rating_count'] as num?)?.toInt() ?? 0,
       relation: relation,
+      deletedAt: parseTime(row['deleted_at']),
     );
   }
 }

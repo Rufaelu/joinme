@@ -73,6 +73,7 @@ class EventService {
         .from('event_feed')
         .select()
         .gt('ends_at', DateTime.now().toUtc().toIso8601String())
+        .isFilter('host_deleted_at', null) // hosts who deleted their account
         .order('starts_at');
     return rows.map(JoinMeEvent.fromFeed).toList();
   }

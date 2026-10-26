@@ -11,6 +11,14 @@ String initialsOf(String name) {
   return parts.take(2).map((p) => p[0].toUpperCase()).join();
 }
 
+/// Name as shown to others; deleted accounts keep their name with a label.
+String shownName(String name, DateTime? deletedAt) => deletedAt == null ? name : '$name · Deleted account';
+
+/// Deleted accounts can be restored for 30 days (the database enforces the same).
+bool canRestore(DateTime deletedAt, DateTime now) => now.difference(deletedAt) <= const Duration(days: 30);
+
+DateTime? parseTime(dynamic v) => v == null ? null : DateTime.parse(v as String).toLocal();
+
 String formatReputation(double? rep) => rep == null ? 'New' : rep.toStringAsFixed(1);
 
 /// Hosts can cancel (delete) an event only before it starts; the database enforces the same rule.
@@ -37,6 +45,7 @@ class EventHost {
   final String? avatarUrl;
   final double? reputation;
   final int ratingCount;
+  final DateTime? deletedAt;
 
   EventHost({
     required this.id,
@@ -44,7 +53,10 @@ class EventHost {
     this.avatarUrl,
     this.reputation,
     this.ratingCount = 0,
+    this.deletedAt,
   });
+
+  String get displayName => shownName(name, deletedAt);
 
   String get avatar => initialsOf(name);
 }
@@ -101,6 +113,7 @@ class JoinMeEvent {
         id: row['host_id'] as String,
         name: row['host_name'] as String,
         avatarUrl: row['host_avatar_url'] as String?,
+        deletedAt: parseTime(row['host_deleted_at']),
         reputation: _toDouble(row['host_reputation']),
         ratingCount: (row['host_rating_count'] as num?)?.toInt() ?? 0,
       ),
@@ -139,6 +152,7 @@ class Profile {
   final int ratingCount;
   final int eventsHosted;
   final int eventsAttended;
+  final DateTime? deletedAt;
 
   Profile({
     required this.id,
@@ -149,7 +163,10 @@ class Profile {
     this.ratingCount = 0,
     this.eventsHosted = 0,
     this.eventsAttended = 0,
+    this.deletedAt,
   });
+
+  bool get isDeleted => deletedAt != null;
 
   factory Profile.fromStats(Map<String, dynamic> row) {
     return Profile(
@@ -161,6 +178,7 @@ class Profile {
       ratingCount: (row['rating_count'] as num?)?.toInt() ?? 0,
       eventsHosted: (row['events_hosted'] as num?)?.toInt() ?? 0,
       eventsAttended: (row['events_attended'] as num?)?.toInt() ?? 0,
+      deletedAt: parseTime(row['deleted_at']),
     );
   }
 
@@ -171,8 +189,9 @@ class GroupMember {
   final String id;
   final String name;
   final String? avatarUrl;
+  final bool isDeleted;
 
-  GroupMember({required this.id, required this.name, this.avatarUrl});
+  GroupMember({required this.id, required this.name, this.avatarUrl, this.isDeleted = false});
 
   String get initials => initialsOf(name);
 }

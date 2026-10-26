@@ -171,6 +171,11 @@ class AppState extends ChangeNotifier {
           .maybeSingle();
       if (row != null) {
         _me = Profile.fromStats(row);
+        // A deleted account that signs in again is offered a restore first.
+        if (_me!.isDeleted && _currentScreen != 'restoreAccount') {
+          _history.clear();
+          _currentScreen = 'restoreAccount';
+        }
         notifyListeners();
       }
     } catch (e) {
@@ -234,7 +239,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       return true;
     }
-    if (_inPasswordRecovery || _currentScreen == 'login') return false;
+    if (_inPasswordRecovery || _currentScreen == 'login' || _currentScreen == 'restoreAccount') return false;
 
     final prev = _history.pop();
     if (prev == null) {
