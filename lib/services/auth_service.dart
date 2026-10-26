@@ -16,6 +16,18 @@ String? validateAuthInput({
   return null;
 }
 
+/// Deep link the reset email sends people back to. Must also be listed under
+/// Supabase → Authentication → URL Configuration → Redirect URLs, and match the
+/// intent filter in android/app/src/main/AndroidManifest.xml.
+const resetRedirectUrl = 'io.supabase.joinme://reset-callback';
+
+/// Checks the "choose a new password" form.
+String? validateNewPassword({required String password, required String confirm}) {
+  if (password.length < 6) return 'Password must be at least 6 characters';
+  if (password != confirm) return "Passwords don't match";
+  return null;
+}
+
 class AuthService {
   SupabaseClient get _db => Supabase.instance.client;
 
@@ -39,6 +51,14 @@ class AuthService {
   Future<void> signIn({required String email, required String password}) async {
     await _db.auth.signInWithPassword(email: email.trim(), password: password);
   }
+
+  /// Emails a reset link. Opening it on this phone brings the user back into the
+  /// app signed in, and Supabase fires AuthChangeEvent.passwordRecovery.
+  Future<void> sendResetLink(String email) =>
+      _db.auth.resetPasswordForEmail(email.trim(), redirectTo: resetRedirectUrl);
+
+  Future<void> updatePassword(String newPassword) =>
+      _db.auth.updateUser(UserAttributes(password: newPassword));
 
   Future<void> signOut() => _db.auth.signOut();
 }

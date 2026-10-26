@@ -26,6 +26,16 @@ class AppState extends ChangeNotifier {
   List<JoinMeEvent> _events = [];
   /// Unsaved Create Event form, kept while the user picks a location on the map.
   Map<String, dynamic>? createFormCache;
+  /// Email typed on the login screen, prefilled on the reset password screen.
+  String? resetEmail;
+  bool _inPasswordRecovery = false;
+  bool get inPasswordRecovery => _inPasswordRecovery;
+
+  void finishPasswordRecovery() {
+    _inPasswordRecovery = false;
+    resetEmail = null;
+    navigateTo('map');
+  }
   bool _loadingEvents = false;
   String? _eventsError;
   RealtimeChannel? _eventsChannel;
@@ -41,6 +51,12 @@ class AppState extends ChangeNotifier {
         _unsubscribeEvents();
         _currentScreen = 'login';
         notifyListeners();
+      } else if (state.event == AuthChangeEvent.passwordRecovery) {
+        // Opened from the reset email: the user is signed in and must pick a new password.
+        _inPasswordRecovery = true;
+        _currentScreen = 'resetPassword';
+        notifyListeners();
+        loadMe();
       } else if (state.event == AuthChangeEvent.signedIn) {
         loadMe();
       }
