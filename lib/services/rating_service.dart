@@ -42,16 +42,15 @@ class RatingService {
     required int? hostScore,
     required Map<String, int> peerScores,
   }) async {
-    await _db.from('event_ratings').insert({
-      'event_id': eventId,
-      'event_score': eventScore,
-      'host_score': hostScore,
+    // One database call = one transaction: a failure saves nothing, so the user can retry.
+    await _db.rpc('submit_ratings', params: {
+      'p_event_id': eventId,
+      'p_event_score': eventScore,
+      'p_host_score': hostScore,
+      'p_peers': [
+        for (final e in peerScores.entries) {'ratee_id': e.key, 'score': e.value},
+      ],
     });
-    if (peerScores.isNotEmpty) {
-      await _db.from('user_ratings').insert([
-        for (final e in peerScores.entries) {'event_id': eventId, 'ratee_id': e.key, 'score': e.value},
-      ]);
-    }
   }
 
   /// Events I was in (as host or member) that have ended, newest first.

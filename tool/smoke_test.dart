@@ -2,8 +2,8 @@
 //
 // Run:  dart run tool/smoke_test.dart
 //
-// Signs up three throwaway users and creates two short events, then deletes
-// the events. Requires "Confirm email" to be off in Supabase Auth settings.
+// Signs up three throwaway users and creates two short (minutes-long) test
+// events, which simply end and drop off the map. Requires "Confirm email" to be off in Supabase Auth settings.
 // ignore_for_file: depend_on_referenced_packages, avoid_print
 import 'dart:async';
 import 'dart:io';
@@ -13,6 +13,7 @@ import 'package:supabase/supabase.dart';
 import 'package:joinme/config/supabase_config.dart';
 
 var _passed = 0;
+const rls = 'row-level security';
 
 void check(bool ok, String what) {
   if (!ok) {
@@ -100,7 +101,7 @@ Future<void> main() async {
   check(await join(b, ev1) == bGroup, 'joining twice returns the same group');
 
   // --- Concurrency: event 2, host holds one slot of group 1, B and C race for the other.
-  final ev2 = await createEvent(a, groupSize: 2, endsIn: const Duration(hours: 1));
+  final ev2 = await createEvent(a, groupSize: 2, endsIn: const Duration(minutes: 3));
   final raced = await Future.wait([join(b, ev2), join(c, ev2)]);
   final nums = [await groupNumber(b, raced[0]), await groupNumber(c, raced[1])]..sort();
   check(nums[0] == 1 && nums[1] == 2, 'concurrent joins: one gets the last slot, the other gets a new group');
@@ -123,12 +124,28 @@ Future<void> main() async {
   final cSees = await c.from('messages').select().eq('group_id', aGroup);
   check(cSees.isEmpty, 'people outside the group cannot read its messages');
   await expectError(() => c.from('messages').insert({'group_id': aGroup, 'body': 'sneaky'}),
-      'people outside the group cannot post in it');
+      'people outside the group cannot post in it', contains: rls);
+
+  // --- Host cannot move times or delete once started
+  final moved = await a
+      .from('events')
+      .update({'ends_at': DateTime.now().toUtc().subtract(const Duration(minutes: 1)).toIso8601String()})
+      .eq('id', ev2)
+      .select();
+  check(moved.isEmpty, 'host cannot change event times (would open rating early)');
+  final deleted = await a.from('events').delete().eq('id', ev2).select();
+  check(deleted.isEmpty, 'host cannot delete an event that has started');
 
   // --- Ratings
-  await expectError(
-      () => b.from('event_ratings').insert({'event_id': ev1, 'event_score': 5, 'host_score': 5}),
-      'cannot rate before the event ends');
+  Future<dynamic> rate(SupabaseClient who, String eventId, int eventScore, int? hostScore, Map<String, int> peers) =>
+      who.rpc('submit_ratings', params: {
+        'p_event_id': eventId,
+        'p_event_score': eventScore,
+        'p_host_score': hostScore,
+        'p_peers': [for (final e in peers.entries) {'ratee_id': e.key, 'score': e.value}],
+      });
+
+  await expectError(() => rate(b, ev1, 5, 5, {}), 'cannot rate before the event ends', contains: rls);
 
   final ends = DateTime.parse(feed['ends_at'] as String);
   final wait = ends.difference(DateTime.now().toUtc()) + const Duration(seconds: 3);
@@ -139,45 +156,61 @@ Future<void> main() async {
 
   await expectError(() => join(b, ev1), 'cannot join an ended event', contains: 'This event has ended');
 
-  await b.from('event_ratings').insert({'event_id': ev1, 'event_score': 5, 'host_score': 4});
+  await rate(b, ev1, 5, 4, {});
   check(true, 'member rates the event and host after it ends');
-  await expectError(
-      () => b.from('event_ratings').insert({'event_id': ev1, 'event_score': 3, 'host_score': 3}),
-      'cannot rate the same event twice');
-  await c.from('event_ratings').insert({'event_id': ev1, 'event_score': 3, 'host_score': 2});
+  await expectError(() => rate(b, ev1, 3, 3, {}), 'cannot rate the same event twice', contains: '23505');
+  await rate(c, ev1, 3, 2, {});
   check(true, 'member of group 2 rates the event and host');
 
-  await expectError(() => a.from('event_ratings').insert({'event_id': ev1, 'event_score': 5, 'host_score': 5}),
-      'host cannot rate themselves as host');
-  await a.from('event_ratings').insert({'event_id': ev1, 'event_score': 5});
-  check(true, 'host rates the event without a host score');
+  await expectError(() => rate(a, ev1, 5, 5, {}), 'host cannot rate themselves as host', contains: rls);
+  await expectError(() => rate(a, ev1, 5, null, {uid(b): 9}), 'out-of-range peer score is rejected', contains: '23514');
+  final aRows = await a.from('event_ratings').select().eq('event_id', ev1).eq('rater_id', uid(a));
+  check(aRows.isEmpty, 'a failed submit saves nothing, so it can be retried');
+  await rate(a, ev1, 5, null, {uid(b): 5});
+  check(true, 'host rates the event and a group mate in one submit');
 
-  await a.from('user_ratings').insert({'event_id': ev1, 'ratee_id': uid(b), 'score': 5});
-  check(true, 'host rates a group mate');
   await expectError(() => b.from('user_ratings').insert({'event_id': ev1, 'ratee_id': uid(a), 'score': 1}),
-      'host cannot be double-rated as a group mate');
+      'host cannot be double-rated as a group mate', contains: rls);
   await expectError(() => b.from('user_ratings').insert({'event_id': ev1, 'ratee_id': uid(c), 'score': 1}),
-      'cannot rate someone from a different group');
+      'cannot rate someone from a different group', contains: rls);
   await expectError(() => b.from('user_ratings').insert({'event_id': ev1, 'ratee_id': uid(b), 'score': 5}),
-      'cannot rate yourself');
+      'cannot rate yourself', contains: rls);
+
+  // --- Privacy: only averages are public
+  final othersRatings = await c.from('user_ratings').select().eq('ratee_id', uid(b));
+  check(othersRatings.isEmpty, 'cannot read who rated someone else');
+  final bEventRows = await b.from('event_ratings').select().eq('event_id', ev1);
+  check(bEventRows.length == 1, 'can only read your own event ratings');
 
   final statsA = await b.from('profile_stats').select().eq('id', uid(a)).single();
   check((statsA['reputation'] as num).toDouble() == 3.0 && statsA['rating_count'] == 2,
       'host reputation = average of host scores (4 and 2 → 3.0, 2 ratings)');
   check(statsA['events_hosted'] == 2, 'host has 2 events hosted');
-  final statsB = await a.from('profile_stats').select().eq('id', uid(b)).single();
+  final statsB = await c.from('profile_stats').select().eq('id', uid(b)).single();
   check((statsB['reputation'] as num).toDouble() == 5.0 && statsB['events_attended'] == 1,
       'group mate reputation 5.0 and 1 event attended');
+  final feedAfter = await c.from('event_feed').select('host_reputation').eq('id', ev1).single();
+  check((feedAfter['host_reputation'] as num).toDouble() == 3.0, 'event feed shows the host reputation');
 
   // --- Leave group
   await c.from('group_members').delete().eq('group_id', raced[1]).eq('user_id', uid(c));
   final cStill = await c.from('group_members').select().eq('group_id', raced[1]).eq('user_id', uid(c));
   check(cStill.isEmpty, 'a member can leave their group');
 
-  // --- Cleanup
-  await a.from('events').delete().inFilter('id', [ev1, ev2]);
-  final left = await a.from('events').select('id').inFilter('id', [ev1, ev2]);
-  check(left.isEmpty, 'host can delete their events (cleanup)');
+  // --- Deleting before start is allowed (the two test events above just end and drop off the map)
+  final now = DateTime.now().toUtc();
+  final future = await a.from('events').insert({
+    'title': 'Smoke test future event',
+    'category': 'chill',
+    'location_name': 'Meskel Square',
+    'lat': 9.01,
+    'lng': 38.761,
+    'starts_at': now.add(const Duration(hours: 1)).toIso8601String(),
+    'ends_at': now.add(const Duration(hours: 2)).toIso8601String(),
+    'group_size': 4,
+  }).select('id').single();
+  final gone = await a.from('events').delete().eq('id', future['id']).select();
+  check(gone.length == 1, 'host can delete an event before it starts');
 
   print('\nALL CHECKS PASSED ($_passed)');
   exit(0);

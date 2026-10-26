@@ -201,3 +201,16 @@ class ChatMessage {
     );
   }
 }
+
+/// Events to show on the map: not yet ended, matching [query] by title,
+/// location or category (case-insensitive).
+List<JoinMeEvent> visibleEvents(List<JoinMeEvent> events, String query) {
+  final q = query.trim().toLowerCase();
+  return events.where((e) {
+    if (e.hasEnded) return false;
+    if (q.isEmpty) return true;
+    return e.title.toLowerCase().contains(q) ||
+        e.location.name.toLowerCase().contains(q) ||
+        e.category.toLowerCase().contains(q);
+  }).toList();
+}

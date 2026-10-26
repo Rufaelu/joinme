@@ -218,11 +218,47 @@ revoke execute on function public.join_event(uuid) from public, anon;
 grant execute on function public.join_event(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
+-- submit_ratings: the event/host rating and peer ratings in one transaction, so a
+-- failure saves nothing and the user can retry. Runs as the caller, so the
+-- insert policies below still apply. Peers who are no longer group mates are skipped.
+-- p_peers: [{"ratee_id": "<uuid>", "score": 1-5}, ...]
+-- ---------------------------------------------------------------------------
+
+create or replace function public.submit_ratings(
+  p_event_id uuid,
+  p_event_score int,
+  p_host_score int,
+  p_peers jsonb default '[]'::jsonb
+)
+returns void
+language plpgsql security invoker set search_path = ''
+as $$
+begin
+  insert into public.event_ratings (event_id, rater_id, event_score, host_score)
+  values (p_event_id, auth.uid(), p_event_score, p_host_score);
+
+  insert into public.user_ratings (event_id, rater_id, ratee_id, score)
+  select p_event_id, auth.uid(), (p ->> 'ratee_id')::uuid, (p ->> 'score')::int
+  from jsonb_array_elements(coalesce(p_peers, '[]'::jsonb)) as p
+  where public.shares_group(p_event_id, auth.uid(), (p ->> 'ratee_id')::uuid);
+end;
+$$;
+
+revoke execute on function public.submit_ratings(uuid, int, int, jsonb) from public, anon;
+grant execute on function public.submit_ratings(uuid, int, int, jsonb) to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Views
 -- ---------------------------------------------------------------------------
 
-create or replace view public.profile_stats
-with (security_invoker = on) as
+-- Views are dropped and recreated so re-running this file picks up changes.
+drop view if exists public.event_feed;
+drop view if exists public.profile_stats;
+
+-- Runs with the owner's rights (security_invoker off) so it can average ratings
+-- that individual users are not allowed to read row by row.
+create view public.profile_stats
+with (security_invoker = off) as
 with received as (
   select ur.ratee_id as uid, ur.score::numeric as s
   from public.user_ratings ur
@@ -248,7 +284,7 @@ select
   )::int as events_attended
 from public.profiles p;
 
-create or replace view public.event_feed
+create view public.event_feed
 with (security_invoker = on) as
 select
   e.*,
@@ -264,6 +300,7 @@ select
 from public.events e
 join public.profile_stats ps on ps.id = e.host_id;
 
+revoke all on public.profile_stats, public.event_feed from public, anon;
 grant select on public.profile_stats, public.event_feed to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -293,12 +330,13 @@ create policy "events readable" on public.events
 drop policy if exists "events insert own" on public.events;
 create policy "events insert own" on public.events
   for insert to authenticated with check (host_id = auth.uid());
+-- No update policy: events can't be edited, so a host can't move the end time
+-- to open rating early or reopen a finished event.
 drop policy if exists "events update own" on public.events;
-create policy "events update own" on public.events
-  for update to authenticated using (host_id = auth.uid()) with check (host_id = auth.uid());
+-- Hosts may cancel (delete) only before the event starts, so ratings can't be wiped.
 drop policy if exists "events delete own" on public.events;
 create policy "events delete own" on public.events
-  for delete to authenticated using (host_id = auth.uid());
+  for delete to authenticated using (host_id = auth.uid() and starts_at > now());
 
 -- groups and members: readable by everyone signed in (for counts); written only
 -- by join_event / the event trigger. Members may leave.
@@ -322,9 +360,10 @@ create policy "messages send by members" on public.messages
   with check (sender_id = auth.uid() and public.is_group_member(group_id));
 
 -- event ratings: once, by a member, after the event ended. The host leaves host_score empty.
+-- Only your own ratings are readable; everyone else sees averages via profile_stats.
 drop policy if exists "event ratings readable" on public.event_ratings;
 create policy "event ratings readable" on public.event_ratings
-  for select to authenticated using (true);
+  for select to authenticated using (rater_id = auth.uid());
 drop policy if exists "event ratings insert" on public.event_ratings;
 create policy "event ratings insert" on public.event_ratings
   for insert to authenticated
@@ -343,7 +382,7 @@ create policy "event ratings insert" on public.event_ratings
 -- The host is rated through event_ratings.host_score, not here.
 drop policy if exists "user ratings readable" on public.user_ratings;
 create policy "user ratings readable" on public.user_ratings
-  for select to authenticated using (true);
+  for select to authenticated using (rater_id = auth.uid());
 drop policy if exists "user ratings insert" on public.user_ratings;
 create policy "user ratings insert" on public.user_ratings
   for insert to authenticated

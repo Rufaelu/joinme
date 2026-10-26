@@ -106,4 +106,24 @@ void main() {
       expect(canRate(endsAt: endsAt, now: after, isMember: true, alreadyRated: true), isFalse);
     });
   });
+
+  group('visibleEvents', () {
+    final now = DateTime.now();
+    JoinMeEvent ev(String id, String title, {Duration endsIn = const Duration(hours: 1)}) {
+      final row = feedRow(startsAt: now.subtract(const Duration(hours: 2)), endsAt: now.add(endsIn))
+        ..['id'] = id
+        ..['title'] = title;
+      return JoinMeEvent.fromFeed(row);
+    }
+
+    test('hides events that have ended since they were fetched', () {
+      final events = [ev('1', 'Football'), ev('2', 'Old', endsIn: const Duration(minutes: -1))];
+      expect(visibleEvents(events, '').map((e) => e.id), ['1']);
+    });
+    test('filters by title, location or category, ignoring case', () {
+      final events = [ev('1', 'Football'), ev('2', 'Study Jam')];
+      expect(visibleEvents(events, 'STUDY').map((e) => e.id), ['2']);
+      expect(visibleEvents(events, 'meskel').map((e) => e.id), ['1', '2']);
+    });
+  });
 }

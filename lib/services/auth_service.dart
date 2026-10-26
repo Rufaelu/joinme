@@ -40,7 +40,5 @@ class AuthService {
     await _db.auth.signInWithPassword(email: email.trim(), password: password);
   }
 
-  Future<void> sendPasswordReset(String email) => _db.auth.resetPasswordForEmail(email);
-
   Future<void> signOut() => _db.auth.signOut();
 }

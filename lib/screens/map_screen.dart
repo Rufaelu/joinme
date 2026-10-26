@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
@@ -27,6 +28,8 @@ class _MapScreenState extends State<MapScreen> {
   // Addis Ababa coordinates as default
   LatLng _currentLocation = const LatLng(9.0300, 38.7400);
   bool _isLoadingLocation = true;
+  // Rebuild every minute so "starts in" labels update and ended events drop off.
+  Timer? _ticker;
   
   // Emojis for categories
   final Map<String, String> _categoryEmojis = {
@@ -43,6 +46,15 @@ class _MapScreenState extends State<MapScreen> {
       context.read<AppState>().refreshEvents();
     });
     _determinePosition();
+    _ticker = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
   }
 
   Future<void> _determinePosition() async {
@@ -83,17 +95,6 @@ class _MapScreenState extends State<MapScreen> {
       debugPrint('Geolocation error: $e');
       if (mounted) setState(() => _isLoadingLocation = false);
     }
-  }
-
-  List<JoinMeEvent> _visibleEvents(List<JoinMeEvent> events) {
-    final q = _searchQuery.trim().toLowerCase();
-    if (q.isEmpty) return events;
-    return events
-        .where((e) =>
-            e.title.toLowerCase().contains(q) ||
-            e.location.name.toLowerCase().contains(q) ||
-            e.category.toLowerCase().contains(q))
-        .toList();
   }
 
   String _startLabel(JoinMeEvent event) {
@@ -263,7 +264,11 @@ class _MapScreenState extends State<MapScreen> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final appState = context.watch<AppState>();
-    final visibleEvents = _visibleEvents(appState.events);
+    final shown = visibleEvents(appState.events, _searchQuery);
+    // Keep the preview card in sync with refreshed data (or drop it if the event is gone).
+    final selected = _selectedEvent == null
+        ? null
+        : shown.where((e) => e.id == _selectedEvent!.id).firstOrNull;
     
     return Scaffold(
       body: Stack(
@@ -301,7 +306,7 @@ class _MapScreenState extends State<MapScreen> {
                   userAgentPackageName: 'com.joinme.app',
                 ),
               MarkerLayer(
-                markers: visibleEvents.map((event) {
+                markers: shown.map((event) {
                   final isSelected = _selectedEvent?.id == event.id;
                   final categoryColor = AppTheme.colorsFor(event.category);
                   
@@ -424,7 +429,7 @@ class _MapScreenState extends State<MapScreen> {
           ),
 
           // Empty / error hint
-          if (_selectedEvent == null && !appState.loadingEvents && (appState.eventsError != null || visibleEvents.isEmpty))
+          if (selected == null && !appState.loadingEvents && (appState.eventsError != null || shown.isEmpty))
             Positioned(
               bottom: 16,
               left: 16,
@@ -452,12 +457,12 @@ class _MapScreenState extends State<MapScreen> {
             ),
           
           // Event Preview Card
-          if (_selectedEvent != null)
+          if (selected != null)
             Positioned(
               bottom: 16,
               left: 16,
               right: 16,
-              child: _buildEventCard(_selectedEvent!).animate().moveY(begin: 100, end: 0, duration: 400.ms, curve: Curves.easeOutQuad).fadeIn(),
+              child: _buildEventCard(selected).animate().moveY(begin: 100, end: 0, duration: 400.ms, curve: Curves.easeOutQuad).fadeIn(),
             ),
         ],
       ),

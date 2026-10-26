@@ -36,19 +36,9 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  Future<void> _forgotPassword() async {
-    final email = _emailController.text.trim();
-    if (!email.contains('@')) {
-      _showMessage('Enter your email above first');
-      return;
-    }
-    try {
-      await context.read<AppState>().auth.sendPasswordReset(email);
-      _showMessage('Password reset email sent to $email');
-    } on AuthException catch (e) {
-      _showMessage(e.message);
-    }
-  }
+  // Resetting needs a deep link back into the app to set the new password,
+  // which isn't built yet, so say so instead of sending a link that leads nowhere.
+  void _forgotPassword() => _showMessage('Password reset is coming soon');
 
   void _comingSoon() => _showMessage('Coming soon — use email for now');
 

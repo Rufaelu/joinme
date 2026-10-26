@@ -76,7 +76,11 @@ class _RateEventScreenState extends State<RateEventScreen> {
     } catch (e) {
       if (!mounted) return;
       final msg = e is PostgrestException
-          ? (e.code == '23505' ? 'You already rated this event' : e.message)
+          ? (e.code == '23505'
+              ? 'You already rated this event'
+              : e.code == '42501'
+                  ? 'Ratings open once the event has ended'
+                  : e.message)
           : 'Could not submit. Try again.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       setState(() => _submitting = false);
