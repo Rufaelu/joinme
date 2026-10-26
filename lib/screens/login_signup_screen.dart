@@ -5,6 +5,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_container.dart';
+import '../services/auth_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 
 class LoginSignupScreen extends StatefulWidget {
   const LoginSignupScreen({Key? key}) : super(key: key);
@@ -29,9 +31,69 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
     super.dispose();
   }
 
-  void _handleSubmit() {
-    // In a real app, do auth here.
-    context.read<AppState>().navigateTo('map');
+  bool _busy = false;
+
+  void _showMessage(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  Future<void> _forgotPassword() async {
+    final email = _emailController.text.trim();
+    if (!email.contains('@')) {
+      _showMessage('Enter your email above first');
+      return;
+    }
+    try {
+      await context.read<AppState>().auth.sendPasswordReset(email);
+      _showMessage('Password reset email sent to $email');
+    } on AuthException catch (e) {
+      _showMessage(e.message);
+    }
+  }
+
+  void _comingSoon() => _showMessage('Coming soon — use email for now');
+
+  Future<void> _handleSubmit() async {
+    if (_busy) return;
+    final error = validateAuthInput(
+      isSignUp: !_isLogin,
+      name: _nameController.text,
+      email: _emailController.text,
+      password: _passwordController.text,
+    );
+    if (error != null) {
+      _showMessage(error);
+      return;
+    }
+
+    final appState = context.read<AppState>();
+    setState(() => _busy = true);
+    try {
+      if (_isLogin) {
+        await appState.auth.signIn(email: _emailController.text, password: _passwordController.text);
+        await appState.loadMe();
+        appState.navigateTo('map');
+      } else {
+        final result = await appState.auth.signUp(
+          name: _nameController.text,
+          email: _emailController.text,
+          password: _passwordController.text,
+        );
+        if (result == AuthResult.needsEmailConfirmation) {
+          _showMessage('Check your email to confirm your account, then sign in.');
+          if (mounted) setState(() => _isLogin = true);
+        } else {
+          await appState.loadMe();
+          appState.navigateTo('onboarding');
+        }
+      }
+    } on AuthException catch (e) {
+      _showMessage(e.message);
+    } catch (e) {
+      _showMessage('Something went wrong. Check your connection and try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -141,7 +203,7 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                             icon: LucideIcons.chrome,
                             iconColor: Colors.blue[500]!,
                             text: 'Continue with Google',
-                            onTap: _handleSubmit,
+                            onTap: _comingSoon,
                           ),
                           const SizedBox(height: 12),
                           Row(
@@ -151,7 +213,7 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                   icon: LucideIcons.apple,
                                   iconColor: isDark ? Colors.white : Colors.black,
                                   text: 'Apple',
-                                  onTap: _handleSubmit,
+                                  onTap: _comingSoon,
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -160,7 +222,7 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                   icon: LucideIcons.facebook,
                                   iconColor: Colors.blue[600]!,
                                   text: 'Facebook',
-                                  onTap: _handleSubmit,
+                                  onTap: _comingSoon,
                                 ),
                               ),
                             ],
@@ -301,6 +363,8 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                 if (_isLogin)
                                   Align(
                                     alignment: Alignment.centerRight,
+                                    child: GestureDetector(
+                                    onTap: _forgotPassword,
                                     child: Padding(
                                       padding: const EdgeInsets.only(top: 16.0),
                                       child: Text(
@@ -311,6 +375,7 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                           fontSize: 14,
                                         ),
                                       ),
+                                    ),
                                     ),
                                   ),
                                 
@@ -335,7 +400,13 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                     ),
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
+                                      children: _busy ? const [
+                                        SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                                        ),
+                                      ] : [
                                         Text(
                                           _isLogin ? 'Sign In' : 'Create Account',
                                           style: const TextStyle(

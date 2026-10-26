@@ -180,7 +180,7 @@ class ProfileScreen extends StatelessWidget {
                       
                       // Logout
                       GestureDetector(
-                        onTap: () => context.read<AppState>().navigateTo('login'),
+                        onTap: () => context.read<AppState>().auth.signOut(),
                         child: Text(
                           'Log Out',
                           style: TextStyle(color: Colors.red[400], fontWeight: FontWeight.bold, fontSize: 16),

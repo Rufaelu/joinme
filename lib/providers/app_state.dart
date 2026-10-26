@@ -1,15 +1,35 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import '../data/mock_data.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/models.dart';
+import '../services/auth_service.dart';
 
 class AppState extends ChangeNotifier {
+  final AuthService auth = AuthService();
+  late final StreamSubscription<AuthState> _authSub;
+
   bool _isDarkMode = true;
-  String _currentScreen = 'login';
+  late String _currentScreen;
   String? _selectedEventId;
   Map<String, dynamic>? _selectedFriend;
-  
+  Profile? _me;
+
   bool _isPickingLocation = false;
   PickedLocation? _pickedLocation;
-  List<JoinMeEvent> _events = List.from(mockEvents);
+
+  AppState() {
+    _currentScreen = auth.isSignedIn ? 'map' : 'login';
+    if (auth.isSignedIn) loadMe();
+    _authSub = auth.changes.listen((state) {
+      if (state.event == AuthChangeEvent.signedOut) {
+        _me = null;
+        _currentScreen = 'login';
+        notifyListeners();
+      } else if (state.event == AuthChangeEvent.signedIn) {
+        loadMe();
+      }
+    });
+  }
 
   bool get isDarkMode => _isDarkMode;
   String get currentScreen => _currentScreen;
@@ -17,7 +37,25 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic>? get selectedFriend => _selectedFriend;
   bool get isPickingLocation => _isPickingLocation;
   PickedLocation? get pickedLocation => _pickedLocation;
-  List<JoinMeEvent> get events => _events;
+  Profile? get me => _me;
+
+  Future<void> loadMe() async {
+    final uid = auth.userId;
+    if (uid == null) return;
+    try {
+      final row = await Supabase.instance.client
+          .from('profile_stats')
+          .select()
+          .eq('id', uid)
+          .maybeSingle();
+      if (row != null) {
+        _me = Profile.fromStats(row);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('loadMe failed: $e');
+    }
+  }
 
   void toggleTheme() {
     _isDarkMode = !_isDarkMode;
@@ -42,9 +80,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addEvent(JoinMeEvent event) {
-    _events.add(event);
-    notifyListeners();
+  @override
+  void dispose() {
+    _authSub.cancel();
+    super.dispose();
   }
 }
 
