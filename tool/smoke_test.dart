@@ -39,7 +39,7 @@ Future<SupabaseClient> newUser(String name, String tag) async {
   final client = SupabaseClient(
     supabaseUrl,
     supabaseKey,
-    authOptions: const AuthClientOptions(autoRefreshToken: false),
+    authOptions: const AuthClientOptions(autoRefreshToken: false, authFlowType: AuthFlowType.implicit),
   );
   final domain = Platform.environment['SMOKE_DOMAIN'] ?? 'example.com';
   final email = 'joinme.smoke.$tag.${name.toLowerCase()}@$domain';
@@ -113,7 +113,8 @@ Future<void> main() async {
   final sub = b.from('messages').stream(primaryKey: ['id']).eq('group_id', aGroup).listen((rows) {
     if (rows.any((r) => r['body'] == 'hello from alice') && !received.isCompleted) received.complete();
   });
-  await Future<void>.delayed(const Duration(seconds: 2));
+  // Give the live connection time to join before sending.
+  await Future<void>.delayed(const Duration(seconds: 6));
   await a.from('messages').insert({'group_id': aGroup, 'body': 'hello from alice'});
   await received.future.timeout(const Duration(seconds: 10), onTimeout: () {
     check(false, 'realtime: group mate receives message live');
