@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'config/supabase_config.dart';
 import 'providers/app_state.dart';
 import 'theme/app_theme.dart';
 import 'screens/login_signup_screen.dart';
@@ -16,7 +18,9 @@ import 'screens/messages_screen.dart';
 import 'screens/group_chat_screen.dart';
 import 'screens/direct_chat_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseKey);
   runApp(
     MultiProvider(
       providers: [
