@@ -8,6 +8,8 @@ import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/avatar.dart';
+import '../widgets/person_sheet.dart';
 
 class EventDetailScreen extends StatefulWidget {
   final String? eventId;
@@ -24,6 +26,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   bool _hasRated = false;
   String? _error;
   bool _joining = false;
+  bool _cancelling = false;
   double? _distanceKm;
 
   @override
@@ -92,6 +95,36 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     }
   }
 
+  Future<void> _cancelEvent() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel this event?'),
+        content: const Text('The event, its groups and chats will be deleted for everyone. This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep it')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Cancel event')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final appState = context.read<AppState>();
+    setState(() => _cancelling = true);
+    try {
+      await appState.eventService.cancel(_event!.id);
+      await appState.refreshEvents();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Event cancelled')));
+      appState.navigateTo('map');
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is PostgrestException ? e.message : e.toString().replaceFirst('Exception: ', '');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      setState(() => _cancelling = false);
+      _load();
+    }
+  }
+
   String _timeLabel(JoinMeEvent e) {
     if (e.hasEnded) return 'Ended';
     if (e.hasStarted) return 'Happening now';
@@ -116,8 +149,8 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark
-              ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)]
-              : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+              ? [AppTheme.darkBg, AppTheme.darkBg2]
+              : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
@@ -217,7 +250,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   padding: const EdgeInsets.all(12),
                   child: Icon(
                     isDark ? LucideIcons.sun : LucideIcons.moon,
-                    color: isDark ? Colors.yellow[400] : Colors.blue[500],
+                    color: isDark ? AppTheme.primaryLight : AppTheme.accent,
                   ),
                 ),
               ),
@@ -235,6 +268,21 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (event.imageUrl != null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: Image.network(
+                          event.imageUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    ).animate().fadeIn(),
+                    const SizedBox(height: 20),
+                  ],
+
                   // Title
                   Text(
                     event.title,
@@ -264,7 +312,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       _buildInfoCard(
                         isDark: isDark,
                         icon: LucideIcons.mapPin,
-                        iconColor: Colors.blue[400]!,
+                        iconColor: AppTheme.accentLight,
                         title: 'Location',
                         value: event.location.name,
                         subtitle: _distanceKm == null ? null : '${_distanceKm!.toStringAsFixed(1)} km away',
@@ -288,11 +336,11 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                                         value: value,
                                         strokeWidth: 4,
                                         backgroundColor: isDark ? Colors.white10 : Colors.black12,
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.teal[400]!),
+                                        valueColor: AlwaysStoppedAnimation<Color>(AppTheme.accent),
                                       );
                                     },
                                   ),
-                                  Icon(LucideIcons.clock, color: Colors.yellow[400], size: 20),
+                                  Icon(LucideIcons.clock, color: AppTheme.primaryLight, size: 20),
                                 ],
                               ),
                             ),
@@ -314,7 +362,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       _buildInfoCard(
                         isDark: isDark,
                         icon: LucideIcons.clock,
-                        iconColor: Colors.blue[400]!,
+                        iconColor: AppTheme.accentLight,
                         title: 'Duration',
                         value: '${event.duration} minutes',
                       ),
@@ -353,28 +401,14 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                                     strokeWidth: 4,
                                     backgroundColor: isDark ? Colors.white10 : Colors.black12,
                                     valueColor: AlwaysStoppedAnimation<Color>(
-                                      (event.host.reputation ?? 0) >= 4.25 ? Colors.blue[400]! : Colors.yellow[500]!
+                                      (event.host.reputation ?? 0) >= 4.25 ? AppTheme.accentLight : AppTheme.primary
                                     ),
                                   );
                                 },
                               ),
-                              Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: LinearGradient(
-                                    colors: [Colors.yellow[400]!, Colors.blue[600]!],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    event.host.avatar,
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
+                              GestureDetector(
+                                onTap: () => showPersonSheet(context, event.host.id),
+                                child: Avatar(name: event.host.name, url: event.host.avatarUrl, size: 48),
                               ),
                             ],
                           ),
@@ -388,7 +422,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                                   style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
                               Row(
                                 children: [
-                                  Icon(LucideIcons.star, size: 14, color: Colors.yellow[500]),
+                                  Icon(LucideIcons.star, size: 14, color: AppTheme.primary),
                                   const SizedBox(width: 4),
                                   Text(
                                     event.host.reputation == null
@@ -437,6 +471,17 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   const SizedBox(height: 36),
 
                   _buildActionButton(event, myGroup, isHost),
+                  if (canCancel(isHost: isHost, startsAt: event.startsAt, now: DateTime.now())) ...[
+                    const SizedBox(height: 16),
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: _cancelling ? null : _cancelEvent,
+                        icon: Icon(LucideIcons.trash2, color: Colors.red[400], size: 18),
+                        label: Text(_cancelling ? 'Cancelling…' : 'Cancel event',
+                            style: TextStyle(color: Colors.red[400], fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 32),
                 ],
               ),
@@ -451,7 +496,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     final full = g.members.length >= event.groupSize;
     return GlassContainer(
       padding: const EdgeInsets.all(16),
-      borderColor: isMine ? Colors.yellow[500]!.withOpacity(0.6) : null,
+      borderColor: isMine ? AppTheme.primary.withOpacity(0.6) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -463,7 +508,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: Colors.yellow[500], borderRadius: BorderRadius.circular(10)),
+                  decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(10)),
                   child: const Text('You', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                 ),
               ],
@@ -479,17 +524,9 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             children: [
               ...g.members.map((m) => Tooltip(
                     message: m.name,
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(colors: [Colors.yellow[400]!, Colors.blue[600]!]),
-                      ),
-                      child: Center(
-                        child: Text(m.initials,
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ),
+                    child: GestureDetector(
+                      onTap: () => showPersonSheet(context, m.id),
+                      child: Avatar(name: m.name, url: m.avatarUrl, size: 40),
                     ),
                   )),
               ...List.generate((event.groupSize - g.members.length).clamp(0, 8), (index) {
@@ -545,12 +582,12 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: enabled ? Colors.yellow[500] : Colors.grey[600],
+          color: enabled ? AppTheme.primary : Colors.grey[600],
           borderRadius: BorderRadius.circular(16),
           boxShadow: enabled
               ? [
                   BoxShadow(
-                    color: Colors.yellow[600]!.withOpacity(0.4),
+                    color: AppTheme.primaryDark.withOpacity(0.4),
                     blurRadius: 20,
                     offset: const Offset(0, 10),
                   )
@@ -594,7 +631,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: Colors.blue[500]!.withOpacity(0.2),
+              color: AppTheme.accent.withOpacity(0.2),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: iconColor),

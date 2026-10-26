@@ -6,6 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
+import '../widgets/avatar.dart';
+import '../widgets/person_sheet.dart';
 
 class GroupChatScreen extends StatefulWidget {
   final String? eventId;
@@ -139,8 +141,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark
-              ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)]
-              : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+              ? [AppTheme.darkBg, AppTheme.darkBg2]
+              : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
@@ -314,17 +316,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) ...[
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(colors: [Colors.yellow[400]!, Colors.blue[600]!]),
-              ),
-              child: Center(
-                child: Text(initialsOf(msg.senderName),
-                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-              ),
+            GestureDetector(
+              onTap: () => showPersonSheet(context, msg.senderId),
+              child: Avatar(name: msg.senderName, url: context.read<AppState>().chat.avatarOf(msg.senderId), size: 32),
             ),
             const SizedBox(width: 8),
           ],

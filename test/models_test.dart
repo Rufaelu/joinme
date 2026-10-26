@@ -126,4 +126,44 @@ void main() {
       expect(visibleEvents(events, 'meskel').map((e) => e.id), ['1', '2']);
     });
   });
+
+  group('photos', () {
+    test('event feed row carries cover image and host avatar', () {
+      final now = DateTime.now();
+      final row = feedRow(startsAt: now, endsAt: now.add(const Duration(hours: 1)))
+        ..['image_url'] = 'https://x/cover.jpg'
+        ..['host_avatar_url'] = 'https://x/a.jpg';
+      final e = JoinMeEvent.fromFeed(row);
+      expect(e.imageUrl, 'https://x/cover.jpg');
+      expect(e.host.avatarUrl, 'https://x/a.jpg');
+    });
+    test('photos are optional', () {
+      final now = DateTime.now();
+      final e = JoinMeEvent.fromFeed(feedRow(startsAt: now, endsAt: now.add(const Duration(hours: 1))));
+      expect(e.imageUrl, isNull);
+      expect(e.host.avatarUrl, isNull);
+    });
+    test('profile carries avatar url', () {
+      final p = Profile.fromStats({'id': 'u1', 'name': 'Edna', 'avatar_url': 'https://x/e.jpg'});
+      expect(p.avatarUrl, 'https://x/e.jpg');
+    });
+    test('upload path starts with the user id folder (storage rules rely on it)', () {
+      final path = uploadPath(userId: 'u1', kind: 'avatar', extension: 'PNG');
+      expect(path, startsWith('u1/avatar-'));
+      expect(path, endsWith('.png'));
+    });
+  });
+
+  group('canCancel', () {
+    final start = DateTime(2026, 10, 26, 12);
+    test('host can cancel before the start', () {
+      expect(canCancel(isHost: true, startsAt: start, now: start.subtract(const Duration(minutes: 1))), isTrue);
+    });
+    test('host cannot cancel once started', () {
+      expect(canCancel(isHost: true, startsAt: start, now: start), isFalse);
+    });
+    test('others cannot cancel', () {
+      expect(canCancel(isHost: false, startsAt: start, now: start.subtract(const Duration(hours: 1))), isFalse);
+    });
+  });
 }

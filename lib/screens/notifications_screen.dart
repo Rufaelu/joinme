@@ -3,58 +3,70 @@ import 'package:provider/provider.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/app_state.dart';
+import '../models/social.dart';
+import '../theme/app_theme.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/bottom_nav.dart';
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({Key? key}) : super(key: key);
 
+  static const _icons = {
+    'friend_request': LucideIcons.userPlus,
+    'friend_accepted': LucideIcons.userCheck,
+    'event_joined': LucideIcons.users,
+    'direct_message': LucideIcons.messageCircle,
+  };
+
+  String _ago(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.inMinutes < 1) return 'Just now';
+    if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+    if (d.inHours < 24) return '${d.inHours}h ago';
+    return '${d.inDays}d ago';
+  }
+
+  Future<void> _open(BuildContext context, AppNotification n) async {
+    final appState = context.read<AppState>();
+    final screen = notificationScreen(n.type);
+    switch (screen) {
+      case 'friends':
+        appState.friendsTab = 'requests';
+        appState.navigateTo('friends');
+      case 'event':
+        if (n.eventId != null) appState.navigateTo('event', eventId: n.eventId);
+      case 'directChat':
+        if (n.actorId == null) return;
+        try {
+          final p = await appState.social.person(n.actorId!);
+          appState.navigateTo('directChat', friendData: {'id': p.id, 'name': p.name, 'avatarUrl': p.avatarUrl});
+        } catch (_) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open this chat')));
+          }
+        }
+    }
+  }
+
+  Future<void> _clearAll(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: const Text('Clear all notifications?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Clear')),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) context.read<AppState>().social.clearAll();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    final List<Map<String, dynamic>> notifications = [
-      {
-        'id': '1',
-        'type': 'request',
-        'title': 'New Friend Request',
-        'message': 'David Martinez sent you a friend request.',
-        'time': '2m ago',
-        'read': false,
-        'icon': LucideIcons.userPlus,
-        'color': Colors.blue[400]!,
-      },
-      {
-        'id': '2',
-        'type': 'event_invite',
-        'title': 'Event Invitation',
-        'message': 'Emma Chen invited you to "Sketch Jam".',
-        'time': '1h ago',
-        'read': false,
-        'icon': LucideIcons.calendarPlus,
-        'color': Colors.purple[400]!,
-      },
-      {
-        'id': '3',
-        'type': 'event_reminder',
-        'title': 'Event Starting Soon',
-        'message': '"Study Session - Web Dev" starts in 30 minutes.',
-        'time': '30m ago',
-        'read': true,
-        'icon': LucideIcons.bell,
-        'color': Colors.yellow[500]!,
-      },
-      {
-        'id': '4',
-        'type': 'system',
-        'title': 'Welcome to JoinMe!',
-        'message': 'Complete your profile to find more relevant events.',
-        'time': '1d ago',
-        'read': true,
-        'icon': LucideIcons.sparkles,
-        'color': Colors.yellow[400]!,
-      },
-    ];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final appState = context.watch<AppState>();
+    final notifications = appState.notifications;
 
     return Scaffold(
       body: Container(
@@ -64,15 +76,12 @@ class NotificationsScreen extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: isDark 
-              ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)] 
-              : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+            colors: isDark ? [AppTheme.darkBg, AppTheme.darkBg2] : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
           child: Column(
             children: [
-              // Header
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
                 child: Row(
@@ -86,108 +95,112 @@ class NotificationsScreen extends StatelessWidget {
                         child: Icon(LucideIcons.arrowLeft, color: isDark ? Colors.white : Colors.black),
                       ),
                     ),
-                    Text(
-                      'Notifications',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black,
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () {},
-                      child: GlassContainer(
-                        borderRadius: 30,
-                        padding: const EdgeInsets.all(12),
-                        child: Icon(LucideIcons.checkCheck, color: isDark ? Colors.white : Colors.black),
-                      ),
+                    Text('Notifications',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black)),
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: appState.unreadCount == 0 ? null : () => appState.social.markAllRead(),
+                          child: GlassContainer(
+                            borderRadius: 30,
+                            padding: const EdgeInsets.all(12),
+                            child: Icon(LucideIcons.checkCheck,
+                                color: appState.unreadCount == 0 ? (isDark ? Colors.white24 : Colors.black26) : AppTheme.primaryLight),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: notifications.isEmpty ? null : () => _clearAll(context),
+                          child: GlassContainer(
+                            borderRadius: 30,
+                            padding: const EdgeInsets.all(12),
+                            child: Icon(LucideIcons.trash2,
+                                color: notifications.isEmpty ? (isDark ? Colors.white24 : Colors.black26) : (isDark ? Colors.white : Colors.black)),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-
-              // Notifications List
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: notifications.length,
-                  itemBuilder: (context, index) {
-                    final note = notifications[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12.0),
-                      child: GlassContainer(
-                        backgroundColor: note['read'] 
-                            ? (isDark ? Colors.white.withOpacity(0.02) : Colors.white.withOpacity(0.4)) 
-                            : (isDark ? Colors.white.withOpacity(0.08) : Colors.white.withOpacity(0.8)),
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                child: notifications.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: note['color'].withOpacity(0.2),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(note['icon'], color: note['color']),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          note['title'], 
-                                          style: TextStyle(
-                                            color: isDark ? Colors.white : Colors.black, 
-                                            fontWeight: note['read'] ? FontWeight.normal : FontWeight.bold, 
-                                            fontSize: 16
-                                          )
-                                        ),
-                                      ),
-                                      if (!note['read'])
-                                        Container(
-                                          width: 8,
-                                          height: 8,
-                                          decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
-                                        ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    note['message'], 
-                                    style: TextStyle(
-                                      color: isDark ? Colors.white70 : Colors.black87, 
-                                      fontSize: 14
-                                    )
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    note['time'], 
-                                    style: TextStyle(
-                                      color: isDark ? Colors.white54 : Colors.black54, 
-                                      fontSize: 12
-                                    )
-                                  ),
-                                ],
-                              ),
-                            ),
+                            Icon(LucideIcons.bellOff, size: 64, color: isDark ? Colors.white24 : Colors.black26),
+                            const SizedBox(height: 16),
+                            Text("You're all caught up",
+                                style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 16)),
                           ],
                         ),
-                      ).animate().fadeIn(delay: (50 * index).ms).moveY(begin: 20, end: 0),
-                    );
-                  },
-                ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: notifications.length,
+                        itemBuilder: (context, i) {
+                          final n = notifications[i];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: GestureDetector(
+                              onTap: () {
+                                if (!n.read) appState.social.markAllRead();
+                                _open(context, n);
+                              },
+                              child: GlassContainer(
+                                padding: const EdgeInsets.all(16),
+                                borderColor: n.read ? null : AppTheme.primary.withOpacity(0.5),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: (n.read ? Colors.grey : AppTheme.primary).withOpacity(0.2),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(_icons[n.type] ?? LucideIcons.bell,
+                                          color: n.read ? (isDark ? Colors.white54 : Colors.black54) : AppTheme.primaryLight, size: 20),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            n.body,
+                                            style: TextStyle(
+                                              color: isDark ? Colors.white : Colors.black,
+                                              fontWeight: n.read ? FontWeight.normal : FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(_ago(n.createdAt),
+                                              style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 12)),
+                                        ],
+                                      ),
+                                    ),
+                                    if (!n.read)
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        margin: const EdgeInsets.only(top: 6, left: 8),
+                                        decoration: const BoxDecoration(color: AppTheme.accent, shape: BoxShape.circle),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ).animate().fadeIn(delay: (40 * i).ms).moveX(begin: -16, end: 0);
+                        },
+                      ),
               ),
             ],
           ),
         ),
-      ).animate().slideX(begin: 1, end: 0, duration: 400.ms, curve: Curves.easeOutQuad),
+      ),
+      bottomNavigationBar: const BottomNav(),
     );
   }
 }

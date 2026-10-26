@@ -6,7 +6,9 @@
 // events, which simply end and drop off the map. Requires "Confirm email" to be off in Supabase Auth settings.
 // ignore_for_file: depend_on_referenced_packages, avoid_print
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:supabase/supabase.dart';
 
@@ -212,6 +214,99 @@ Future<void> main() async {
   }).select('id').single();
   final gone = await a.from('events').delete().eq('id', future['id']).select();
   check(gone.length == 1, 'host can delete an event before it starts');
+
+  // --- Friends, direct messages, notifications
+  final found = await a.from('profile_stats').select('id').ilike('name', '%Bob Smoke%').eq('id', uid(b));
+  check(found.length == 1, 'people search finds other users by name');
+
+  await expectError(() => b.from('direct_messages').insert({'recipient_id': uid(a), 'body': 'hi stranger'}),
+      'cannot message someone who is not a friend', contains: rls);
+
+  check(await a.rpc('send_friend_request', params: {'p_user': uid(b)}) == 'pending', 'friend request sent');
+  check(await a.rpc('send_friend_request', params: {'p_user': uid(b)}) == 'pending', 'sending twice does not duplicate');
+  await expectError(() => a.rpc('send_friend_request', params: {'p_user': uid(a)}), 'cannot friend yourself',
+      contains: 'cannot add yourself');
+  final cSeesFriendship = await c.from('friendships').select();
+  check(cSeesFriendship.isEmpty, "others can't see who is friends with whom");
+
+  final bNotes = await b.from('notifications').select('type, actor_id').eq('type', 'friend_request');
+  check(bNotes.length == 1 && bNotes.first['actor_id'] == uid(a), 'recipient gets a friend request notification');
+
+  await b.rpc('respond_friend_request', params: {'p_requester': uid(a), 'p_accept': true});
+  final aAccepted = await a.from('notifications').select().eq('type', 'friend_accepted').eq('actor_id', uid(b));
+  check(aAccepted.length == 1, 'requester is notified when accepted');
+  check(await b.rpc('are_friends', params: {'a': uid(a), 'b': uid(b)}) == true, 'they are now friends');
+  check(await b.rpc('send_friend_request', params: {'p_user': uid(a)}) == 'accepted', 'adding an existing friend is harmless');
+
+  final aJoined = await a.from('notifications').select().eq('type', 'event_joined');
+  check(aJoined.isNotEmpty, 'host is notified when someone joins their event');
+
+  final dmKey = uid(a).compareTo(uid(b)) <= 0 ? '${uid(a)}:${uid(b)}' : '${uid(b)}:${uid(a)}';
+  final dmReceived = Completer<void>();
+  final dmSub = b.from('direct_messages').stream(primaryKey: ['id']).eq('pair_key', dmKey).listen((rows) {
+    if (rows.any((r) => r['body'] == 'hey bob') && !dmReceived.isCompleted) dmReceived.complete();
+  });
+  await Future<void>.delayed(const Duration(seconds: 6));
+  await a.from('direct_messages').insert({'recipient_id': uid(b), 'body': 'hey bob'});
+  await dmReceived.future.timeout(const Duration(seconds: 10), onTimeout: () {
+    check(false, 'direct message arrives live');
+  });
+  check(true, 'direct message arrives live');
+  await dmSub.cancel();
+
+  final cSeesDm = await c.from('direct_messages').select().eq('pair_key', dmKey);
+  check(cSeesDm.isEmpty, "others can't read a direct chat");
+  final dmNote = await b.from('notifications').select('body').eq('type', 'direct_message');
+  check(dmNote.length == 1 && (dmNote.first['body'] as String).contains('hey bob'), 'recipient gets a message notification');
+
+  await b.from('notifications').update({'read': true}).eq('user_id', uid(b));
+  final unread = await b.from('notifications').select().eq('read', false);
+  check(unread.isEmpty, 'notifications can be marked read');
+  await expectError(() => b.from('notifications').update({'body': 'tampered'}).eq('user_id', uid(b)),
+      'only the read flag of a notification can change', contains: '42501');
+  await expectError(
+      () => c.from('notifications').insert({'user_id': uid(b), 'type': 'friend_request', 'body': 'fake'}),
+      "can't create notifications for others", contains: '42501');
+
+  await a.rpc('remove_friend', params: {'p_user': uid(b)});
+  await expectError(() => a.from('direct_messages').insert({'recipient_id': uid(b), 'body': 'still there?'}),
+      'after unfriending, messaging is blocked', contains: rls);
+
+  // --- Photos (Supabase Storage)
+  final png = Uint8List.fromList(base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+  // Same as the app: a fresh file name each time, no overwrite.
+  final ownPath = '${uid(a)}/avatar-smoke-$tag.png';
+  await a.storage.from('avatars').uploadBinary(ownPath, png,
+      fileOptions: const FileOptions(contentType: 'image/png'));
+  final publicUrl = a.storage.from('avatars').getPublicUrl(ownPath);
+  final fetched = await HttpClient().getUrl(Uri.parse(publicUrl)).then((r) => r.close());
+  check(fetched.statusCode == 200, 'uploaded photo is publicly viewable by URL');
+  await expectError(
+      () => a.storage.from('avatars').uploadBinary('${uid(b)}/avatar-sneaky.png', png,
+          fileOptions: const FileOptions(contentType: 'image/png')),
+      "cannot upload into someone else's photo folder",
+      contains: 'row-level security');
+  await a.from('profiles').update({'avatar_url': publicUrl}).eq('id', uid(a));
+  final aStats = await b.from('profile_stats').select('avatar_url').eq('id', uid(a)).single();
+  check(aStats['avatar_url'] == publicUrl, 'profile photo shows up for other users');
+
+  final coverRow = await a.from('events').insert({
+    'title': 'Smoke test cover event',
+    'category': 'creative',
+    'location_name': 'Meskel Square',
+    'lat': 9.01,
+    'lng': 38.761,
+    'starts_at': now.add(const Duration(hours: 1)).toIso8601String(),
+    'ends_at': now.add(const Duration(hours: 2)).toIso8601String(),
+    'group_size': 4,
+    'image_url': publicUrl,
+  }).select('id').single();
+  final coverFeed = await b.from('event_feed').select('image_url, host_avatar_url').eq('id', coverRow['id']).single();
+  check(coverFeed['image_url'] == publicUrl && coverFeed['host_avatar_url'] == publicUrl,
+      'event feed carries cover image and host photo');
+  await a.from('events').delete().eq('id', coverRow['id']);
+  await a.storage.from('avatars').remove([ownPath]);
 
   print('\nALL CHECKS PASSED ($_passed)');
   exit(0);

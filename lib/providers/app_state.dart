@@ -6,13 +6,45 @@ import '../services/auth_service.dart';
 import '../services/event_service.dart';
 import '../services/chat_service.dart';
 import '../services/rating_service.dart';
+import '../services/storage_service.dart';
+import '../services/social_service.dart';
+import '../models/social.dart';
+import 'nav_history.dart';
 
 class AppState extends ChangeNotifier {
   final AuthService auth = AuthService();
   final EventService eventService = EventService();
   final ChatService chat = ChatService();
   final RatingService ratings = RatingService();
+  final StorageService storage = StorageService();
+  final SocialService social = SocialService();
+  StreamSubscription<List<AppNotification>>? _notifSub;
+  List<AppNotification> _notifications = [];
+  List<AppNotification> get notifications => _notifications;
+  int get unreadCount => _notifications.where((n) => !n.read).length;
+  /// Tab the Friends screen opens on ('friends', 'requests' or 'find').
+  String friendsTab = 'friends';
+
+  /// Live notifications for the bell badge and Notifications screen.
+  void _watchNotifications() {
+    _notifSub?.cancel();
+    if (!auth.isSignedIn) return;
+    _notifSub = social.notifications().listen(
+      (list) {
+        _notifications = list;
+        notifyListeners();
+      },
+      onError: (e) => debugPrint('notifications stream failed: $e'),
+    );
+  }
+
+  void _stopNotifications() {
+    _notifSub?.cancel();
+    _notifSub = null;
+    _notifications = [];
+  }
   late final StreamSubscription<AuthState> _authSub;
+  final NavHistory _history = NavHistory();
 
   bool _isDarkMode = true;
   late String _currentScreen;
@@ -42,23 +74,38 @@ class AppState extends ChangeNotifier {
 
   AppState() {
     _currentScreen = auth.isSignedIn ? 'map' : 'login';
-    if (auth.isSignedIn) loadMe();
+    if (auth.isSignedIn) {
+      loadMe();
+      _watchNotifications();
+    }
     _authSub = auth.changes.listen((state) {
       if (state.event == AuthChangeEvent.signedOut) {
         _me = null;
         _events = [];
         _pickedLocation = null;
         _unsubscribeEvents();
+        _stopNotifications();
+        _selectedFriend = null;
+        createFormCache = null;
+        _history.clear();
         _currentScreen = 'login';
         notifyListeners();
       } else if (state.event == AuthChangeEvent.passwordRecovery) {
         // Opened from the reset email: the user is signed in and must pick a new password.
         _inPasswordRecovery = true;
+        _history.clear();
         _currentScreen = 'resetPassword';
         notifyListeners();
         loadMe();
       } else if (state.event == AuthChangeEvent.signedIn) {
         loadMe();
+        _watchNotifications();
+        // Google sign-in returns here from the browser while the login screen is showing.
+        if (_currentScreen == 'login') {
+          _history.clear();
+          _currentScreen = 'map';
+          notifyListeners();
+        }
       }
     });
   }
@@ -131,13 +178,14 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> updateProfile({required String name, String? bio}) async {
+  Future<void> updateProfile({required String name, String? bio, String? avatarUrl}) async {
     final uid = auth.userId;
     if (uid == null) return;
     final trimmedBio = bio?.trim();
     await Supabase.instance.client.from('profiles').update({
       'name': name.trim(),
       'bio': (trimmedBio == null || trimmedBio.isEmpty) ? null : trimmedBio,
+      if (avatarUrl != null) 'avatar_url': avatarUrl,
     }).eq('id', uid);
     await loadMe();
   }
@@ -158,7 +206,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void navigateTo(String screen, {String? eventId, String? groupId, Map<String, dynamic>? friendData}) {
+  /// Shows [screen]. With [replace], back skips the current screen.
+  void navigateTo(String screen,
+      {String? eventId, String? groupId, Map<String, dynamic>? friendData, bool replace = false}) {
+    _history.push(
+      NavEntry(_currentScreen, eventId: _selectedEventId, groupId: _selectedGroupId, friendData: _selectedFriend),
+      next: screen,
+      replace: replace,
+    );
     if (eventId != null) _selectedEventId = eventId;
     if (groupId != null) _selectedGroupId = groupId;
     if (friendData != null) _selectedFriend = friendData;
@@ -166,10 +221,41 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Android back button. Returns false when the app should close.
+  bool goBack() {
+    if (_currentScreen == 'create') {
+      createFormCache = null;
+      _isPickingLocation = false;
+    }
+    // Picking a location for a new event: back returns to the form.
+    if (_currentScreen == 'map' && _isPickingLocation) {
+      _isPickingLocation = false;
+      _currentScreen = 'create';
+      notifyListeners();
+      return true;
+    }
+    if (_inPasswordRecovery || _currentScreen == 'login') return false;
+
+    final prev = _history.pop();
+    if (prev == null) {
+      if (_currentScreen == 'map' || _currentScreen == 'onboarding') return false;
+      _currentScreen = auth.isSignedIn ? 'map' : 'login';
+      notifyListeners();
+      return true;
+    }
+    _currentScreen = prev.screen;
+    if (prev.eventId != null) _selectedEventId = prev.eventId;
+    if (prev.groupId != null) _selectedGroupId = prev.groupId;
+    if (prev.friendData != null) _selectedFriend = prev.friendData;
+    notifyListeners();
+    return true;
+  }
+
   @override
   void dispose() {
     _authSub.cancel();
     _unsubscribeEvents();
+    _notifSub?.cancel();
     super.dispose();
   }
 }

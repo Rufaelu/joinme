@@ -45,6 +45,8 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>JoinMe lets you choose a profile photo and event cover images.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>JoinMe uses your location to show events near you.</string>
 	<key>CFBundleURLTypes</key>

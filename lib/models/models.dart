@@ -13,6 +13,14 @@ String initialsOf(String name) {
 
 String formatReputation(double? rep) => rep == null ? 'New' : rep.toStringAsFixed(1);
 
+/// Hosts can cancel (delete) an event only before it starts; the database enforces the same rule.
+bool canCancel({required bool isHost, required DateTime startsAt, required DateTime now}) =>
+    isHost && now.isBefore(startsAt);
+
+/// Storage object path. The first folder must be the user's id: storage policies check it.
+String uploadPath({required String userId, required String kind, required String extension}) =>
+    '$userId/$kind-${DateTime.now().millisecondsSinceEpoch}.${extension.toLowerCase()}';
+
 bool canRate({
   required DateTime endsAt,
   required DateTime now,
@@ -26,12 +34,14 @@ double? _toDouble(dynamic v) => v == null ? null : (v as num).toDouble();
 class EventHost {
   final String id;
   final String name;
+  final String? avatarUrl;
   final double? reputation;
   final int ratingCount;
 
   EventHost({
     required this.id,
     required this.name,
+    this.avatarUrl,
     this.reputation,
     this.ratingCount = 0,
   });
@@ -56,6 +66,7 @@ class JoinMeEvent {
   final String title;
   final String category;
   final String? description;
+  final String? imageUrl;
   final EventHost host;
   final EventLocation location;
   final DateTime startsAt;
@@ -69,6 +80,7 @@ class JoinMeEvent {
     required this.title,
     required this.category,
     this.description,
+    this.imageUrl,
     required this.host,
     required this.location,
     required this.startsAt,
@@ -84,9 +96,11 @@ class JoinMeEvent {
       title: row['title'] as String,
       category: row['category'] as String,
       description: row['description'] as String?,
+      imageUrl: row['image_url'] as String?,
       host: EventHost(
         id: row['host_id'] as String,
         name: row['host_name'] as String,
+        avatarUrl: row['host_avatar_url'] as String?,
         reputation: _toDouble(row['host_reputation']),
         ratingCount: (row['host_rating_count'] as num?)?.toInt() ?? 0,
       ),
@@ -120,6 +134,7 @@ class Profile {
   final String id;
   final String name;
   final String? bio;
+  final String? avatarUrl;
   final double? reputation;
   final int ratingCount;
   final int eventsHosted;
@@ -129,6 +144,7 @@ class Profile {
     required this.id,
     required this.name,
     this.bio,
+    this.avatarUrl,
     this.reputation,
     this.ratingCount = 0,
     this.eventsHosted = 0,
@@ -140,6 +156,7 @@ class Profile {
       id: row['id'] as String,
       name: row['name'] as String,
       bio: row['bio'] as String?,
+      avatarUrl: row['avatar_url'] as String?,
       reputation: _toDouble(row['reputation']),
       ratingCount: (row['rating_count'] as num?)?.toInt() ?? 0,
       eventsHosted: (row['events_hosted'] as num?)?.toInt() ?? 0,
@@ -153,8 +170,9 @@ class Profile {
 class GroupMember {
   final String id;
   final String name;
+  final String? avatarUrl;
 
-  GroupMember({required this.id, required this.name});
+  GroupMember({required this.id, required this.name, this.avatarUrl});
 
   String get initials => initialsOf(name);
 }

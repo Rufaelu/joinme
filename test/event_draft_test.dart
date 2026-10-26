@@ -11,6 +11,7 @@ void main() {
     double? lng = 38.76,
     DateTime? startsAt,
     int groupSize = 6,
+    int durationMinutes = 60,
   }) {
     return EventDraft(
       title: title,
@@ -20,7 +21,7 @@ void main() {
       lat: lat,
       lng: lng,
       startsAt: startsAt ?? now.add(const Duration(minutes: 30)),
-      durationMinutes: 60,
+      durationMinutes: durationMinutes,
       groupSize: groupSize,
     );
   }
@@ -43,6 +44,15 @@ void main() {
     });
     test('start more than 5 minutes ago is rejected', () {
       expect(draft(startsAt: now.subtract(const Duration(minutes: 6))).validate(now), 'Start time is in the past');
+    });
+    test('duration under 15 minutes is rejected', () {
+      expect(draft(durationMinutes: 10).validate(now), 'Duration must be between 15 minutes and 24 hours');
+    });
+    test('duration over 24 hours is rejected', () {
+      expect(draft(durationMinutes: 24 * 60 + 1).validate(now), 'Duration must be between 15 minutes and 24 hours');
+    });
+    test('a custom 1h 45m duration is fine', () {
+      expect(draft(durationMinutes: 105).validate(now), isNull);
     });
     test('start a couple of minutes ago is allowed', () {
       expect(draft(startsAt: now.subtract(const Duration(minutes: 2))).validate(now), isNull);
@@ -68,5 +78,28 @@ void main() {
     expect(row['ends_at'], '2026-10-26T13:30:00.000Z');
     expect(row['group_size'], 6);
     expect(row.containsKey('host_id'), isFalse);
+  });
+
+  test('toInsert includes the cover image only when there is one', () {
+    EventDraft withImage(String? url) => EventDraft(
+          title: 'Football',
+          category: 'sports',
+          description: null,
+          locationName: 'Meskel Square',
+          lat: 9.01,
+          lng: 38.76,
+          startsAt: DateTime.utc(2026, 10, 26, 12),
+          durationMinutes: 60,
+          groupSize: 6,
+          imageUrl: url,
+        );
+    expect(withImage('https://x/c.jpg').toInsert()['image_url'], 'https://x/c.jpg');
+    expect(withImage(null).toInsert().containsKey('image_url'), isFalse);
+  });
+
+  group('formatDuration', () {
+    test('minutes only', () => expect(formatDuration(45), '45m'));
+    test('whole hours', () => expect(formatDuration(120), '2h'));
+    test('hours and minutes', () => expect(formatDuration(105), '1h 45m'));
   });
 }

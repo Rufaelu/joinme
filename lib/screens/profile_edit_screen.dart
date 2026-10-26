@@ -4,7 +4,8 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/app_state.dart';
 import '../widgets/glass_container.dart';
-import '../models/models.dart';
+import '../widgets/avatar.dart';
+import '../theme/app_theme.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({Key? key}) : super(key: key);
@@ -17,6 +18,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   late TextEditingController _nameController;
   late TextEditingController _bioController;
   bool _saving = false;
+  bool _uploading = false;
+  String? _avatarUrl;
   
   @override
   void initState() {
@@ -24,6 +27,25 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     final me = context.read<AppState>().me;
     _nameController = TextEditingController(text: me?.name ?? '');
     _bioController = TextEditingController(text: me?.bio ?? '');
+    _avatarUrl = me?.avatarUrl;
+  }
+
+  Future<void> _pickPhoto() async {
+    final storage = context.read<AppState>().storage;
+    final file = await storage.pickPhoto();
+    if (file == null || !mounted) return;
+    setState(() => _uploading = true);
+    try {
+      final url = await storage.upload(bucket: 'avatars', kind: 'avatar', file: file);
+      if (mounted) setState(() => _avatarUrl = url);
+    } catch (e) {
+      debugPrint('Avatar upload failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not upload the photo. Try a smaller image.')));
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
   }
   
   @override
@@ -41,7 +63,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     final appState = context.read<AppState>();
     setState(() => _saving = true);
     try {
-      await appState.updateProfile(name: _nameController.text, bio: _bioController.text);
+      await appState.updateProfile(name: _nameController.text, bio: _bioController.text, avatarUrl: _avatarUrl);
       appState.navigateTo('profile');
     } catch (e) {
       if (!mounted) return;
@@ -64,8 +86,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark 
-              ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)] 
-              : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+              ? [AppTheme.darkBg, AppTheme.darkBg2] 
+              : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
@@ -103,29 +125,28 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
                   child: Column(
                     children: [
-                      // Avatar Edit
-                      Stack(
-                        alignment: Alignment.bottomRight,
-                        children: [
-                          Container(
-                            width: 120,
-                            height: 120,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: [Colors.yellow[400]!, Colors.blue[600]!],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
+                      // Avatar Edit — tap to choose a photo
+                      GestureDetector(
+                        onTap: _uploading ? null : _pickPhoto,
+                        child: Stack(
+                          alignment: Alignment.bottomRight,
+                          children: [
+                            Avatar(name: _nameController.text, url: _avatarUrl, size: 120),
+                            if (_uploading)
+                              const Positioned.fill(
+                                child: Center(child: CircularProgressIndicator(color: Colors.white)),
                               ),
-                            ),
-                            child: Center(
-                              child: Text(
-                                initialsOf(_nameController.text),
-                                style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.accent,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: isDark ? AppTheme.darkBg2 : Colors.white, width: 4),
                               ),
+                              child: const Icon(LucideIcons.camera, color: Colors.white, size: 20),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
                       
                       const SizedBox(height: 48),
@@ -145,7 +166,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                           decoration: InputDecoration(
                             border: InputBorder.none,
                             contentPadding: const EdgeInsets.all(16),
-                            prefixIcon: Icon(LucideIcons.user, color: Colors.blue[400]),
+                            prefixIcon: Icon(LucideIcons.user, color: AppTheme.accentLight),
                           ),
                         ),
                       ).animate().fadeIn(delay: 100.ms).moveY(begin: 20, end: 0, duration: 400.ms),
@@ -176,16 +197,16 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
                       // Save Button
                       GestureDetector(
-                        onTap: _saving ? null : _save,
+                        onTap: _saving || _uploading ? null : _save,
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           decoration: BoxDecoration(
-                            color: Colors.yellow[500],
+                            color: AppTheme.primary,
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.yellow[600]!.withOpacity(0.4),
+                                color: AppTheme.primaryDark.withOpacity(0.4),
                                 blurRadius: 20,
                                 offset: const Offset(0, 10),
                               )

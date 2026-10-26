@@ -17,4 +17,8 @@ void main() {
   test('reset link opens the app via its own URL scheme', () {
     expect(resetRedirectUrl, 'io.supabase.joinme://reset-callback');
   });
+
+  test('Google sign-in returns to the app via the same scheme', () {
+    expect(loginRedirectUrl, 'io.supabase.joinme://login-callback');
+  });
 }

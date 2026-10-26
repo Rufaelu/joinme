@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 import '../providers/app_state.dart';
 import '../services/auth_service.dart';
 import '../widgets/glass_container.dart';
+import '../theme/app_theme.dart';
 
 /// Step 1: email a reset link. Step 2 (opened from that link, see
 /// AppState.inPasswordRecovery): choose a new password.
@@ -97,8 +98,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: isDark
-                ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)]
-                : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+                ? [AppTheme.darkBg, AppTheme.darkBg2]
+                : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
@@ -175,7 +176,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           decoration: BoxDecoration(
-                            color: Colors.yellow[500],
+                            color: AppTheme.primary,
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Center(
@@ -230,7 +231,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         enabled: enabled,
         style: TextStyle(color: isDark ? Colors.white : Colors.black),
         decoration: InputDecoration(
-          prefixIcon: Icon(icon, color: Colors.blue[400]),
+          prefixIcon: Icon(icon, color: AppTheme.accentLight),
           suffixIcon: suffix == null ? null : Padding(padding: const EdgeInsets.only(right: 12), child: suffix),
           suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
           hintText: hint,

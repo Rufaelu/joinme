@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/supabase_config.dart';
 import 'providers/app_state.dart';
@@ -43,12 +43,8 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           title: 'JoinMe',
           debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme.copyWith(
-            textTheme: GoogleFonts.interTextTheme(Theme.of(context).textTheme),
-          ),
-          darkTheme: AppTheme.darkTheme.copyWith(
-            textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
-          ),
+          theme: AppTheme.light(context),
+          darkTheme: AppTheme.dark(context),
           themeMode: appState.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           home: const AppNavigator(),
         );
@@ -66,10 +62,19 @@ class AppNavigator extends StatelessWidget {
     final selectedEventId = context.watch<AppState>().selectedEventId;
     final selectedGroupId = context.watch<AppState>().selectedGroupId;
 
-    return Scaffold(
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: _buildScreen(currentScreen, selectedEventId, selectedGroupId),
+    // The app swaps screens itself instead of pushing routes, so handle the
+    // Android back button here: go to the previous screen, or close the app.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (!context.read<AppState>().goBack()) SystemNavigator.pop();
+      },
+      child: Scaffold(
+        body: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: _buildScreen(currentScreen, selectedEventId, selectedGroupId),
+        ),
       ),
     );
   }

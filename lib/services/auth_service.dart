@@ -21,6 +21,10 @@ String? validateAuthInput({
 /// intent filter in android/app/src/main/AndroidManifest.xml.
 const resetRedirectUrl = 'io.supabase.joinme://reset-callback';
 
+/// Where Google sign-in returns to the app. Also listed in Supabase Redirect URLs
+/// and the Android/iOS URL scheme settings.
+const loginRedirectUrl = 'io.supabase.joinme://login-callback';
+
 /// Checks the "choose a new password" form.
 String? validateNewPassword({required String password, required String confirm}) {
   if (password.length < 6) return 'Password must be at least 6 characters';
@@ -50,6 +54,16 @@ class AuthService {
 
   Future<void> signIn({required String email, required String password}) async {
     await _db.auth.signInWithPassword(email: email.trim(), password: password);
+  }
+
+  /// Opens Google sign-in in the browser; the app gets AuthChangeEvent.signedIn
+  /// when the browser sends the user back via [loginRedirectUrl].
+  Future<void> signInWithGoogle() async {
+    await _db.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: loginRedirectUrl,
+      authScreenLaunchMode: LaunchMode.externalApplication,
+    );
   }
 
   /// Emails a reset link. Opening it on this phone brings the user back into the

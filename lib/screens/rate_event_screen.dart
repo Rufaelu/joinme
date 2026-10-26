@@ -104,8 +104,8 @@ class _RateEventScreenState extends State<RateEventScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark
-                ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)]
-                : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+                ? [AppTheme.darkBg, AppTheme.darkBg2]
+                : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
@@ -187,7 +187,7 @@ class _RateEventScreenState extends State<RateEventScreen> {
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               decoration: BoxDecoration(
-                                color: ready ? Colors.yellow[500] : (isDark ? Colors.white10 : Colors.black12),
+                                color: ready ? AppTheme.primary : (isDark ? Colors.white10 : Colors.black12),
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Center(
@@ -219,7 +219,7 @@ class _RateEventScreenState extends State<RateEventScreen> {
       height: 40,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: LinearGradient(colors: [Colors.yellow[400]!, Colors.blue[600]!]),
+        gradient: LinearGradient(colors: [AppTheme.primaryLight, AppTheme.accentDark]),
       ),
       child: Center(child: Text(initials, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
     );
@@ -265,7 +265,7 @@ class _RateEventScreenState extends State<RateEventScreen> {
                   child: Icon(
                     Icons.star_rounded,
                     size: 36,
-                    color: filled ? Colors.yellow[500] : (isDark ? Colors.white24 : Colors.black26),
+                    color: filled ? AppTheme.primary : (isDark ? Colors.white24 : Colors.black26),
                   ),
                 ),
               );

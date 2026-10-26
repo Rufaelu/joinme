@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../services/rating_service.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/avatar.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -43,8 +44,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark 
-              ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)] 
-              : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+              ? [AppTheme.darkBg, AppTheme.darkBg2] 
+              : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
@@ -91,29 +92,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       // Avatar & Name
                       Container(
-                        width: 100,
-                        height: 100,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: [Colors.yellow[400]!, Colors.blue[600]!],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.blue[600]!.withOpacity(0.4),
+                              color: AppTheme.accentDark.withOpacity(0.4),
                               blurRadius: 20,
                               offset: const Offset(0, 10),
                             )
                           ],
                         ),
-                        child: Center(
-                          child: Text(
-                            me?.initials ?? '…',
-                            style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
-                          ),
-                        ),
+                        child: Avatar(name: me?.name ?? '', url: me?.avatarUrl, size: 100),
                       ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
                       const SizedBox(height: 16),
                       Text(
@@ -135,9 +124,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           _buildStatItem(isDark, LucideIcons.star, formatReputation(me?.reputation),
-                              me == null || me.ratingCount == 0 ? 'Reputation' : 'Reputation (${me.ratingCount})', Colors.yellow[500]!),
-                          _buildStatItem(isDark, LucideIcons.calendarCheck, '${me?.eventsAttended ?? 0}', 'Attended', Colors.blue[400]!),
-                          _buildStatItem(isDark, LucideIcons.calendarPlus, '${me?.eventsHosted ?? 0}', 'Hosted', Colors.purple[400]!),
+                              me == null || me.ratingCount == 0 ? 'Reputation' : 'Reputation (${me.ratingCount})', AppTheme.primary),
+                          _buildStatItem(isDark, LucideIcons.calendarCheck, '${me?.eventsAttended ?? 0}', 'Attended', AppTheme.accentLight),
+                          _buildStatItem(isDark, LucideIcons.calendarPlus, '${me?.eventsHosted ?? 0}', 'Hosted', AppTheme.primaryLight),
                         ],
                       ).animate().fadeIn(delay: 200.ms).moveY(begin: 20, end: 0, duration: 400.ms),
                       const SizedBox(height: 32),
@@ -146,7 +135,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _buildActionRow(
                         isDark: isDark,
                         icon: LucideIcons.users,
-                        iconColor: Colors.blue[400]!,
+                        iconColor: AppTheme.accentLight,
                         title: 'Friends',
                         onTap: () => context.read<AppState>().navigateTo('friends'),
                       ).animate().fadeIn(delay: 300.ms).moveY(begin: 20, end: 0, duration: 400.ms),
@@ -154,7 +143,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _buildActionRow(
                         isDark: isDark,
                         icon: isDark ? LucideIcons.sun : LucideIcons.moon,
-                        iconColor: isDark ? Colors.yellow[400]! : Colors.blue[500]!,
+                        iconColor: isDark ? AppTheme.primaryLight : AppTheme.accent,
                         title: isDark ? 'Light Mode' : 'Dark Mode',
                         onTap: () => context.read<AppState>().toggleTheme(),
                       ).animate().fadeIn(delay: 400.ms).moveY(begin: 20, end: 0, duration: 400.ms),
@@ -217,7 +206,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     onTap: () => context.read<AppState>().navigateTo('rate', eventId: event.eventId, groupId: event.groupId),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                      decoration: BoxDecoration(color: Colors.yellow[500], borderRadius: BorderRadius.circular(12)),
+                                      decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(12)),
                                       child: const Text('Rate', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                                     ),
                                   ),

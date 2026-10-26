@@ -72,6 +72,10 @@ create table if not exists public.user_ratings (
   check (rater_id <> ratee_id)
 );
 
+-- Photos (added later; "if not exists" keeps re-runs safe on existing tables)
+alter table public.profiles add column if not exists avatar_url text;
+alter table public.events add column if not exists image_url text;
+
 create index if not exists events_ends_at_idx on public.events (ends_at);
 create index if not exists event_groups_event_idx on public.event_groups (event_id);
 create index if not exists group_members_user_idx on public.group_members (user_id);
@@ -125,10 +129,16 @@ returns trigger
 language plpgsql security definer set search_path = ''
 as $$
 begin
-  insert into public.profiles (id, name)
+  -- Email sign-ups send "name"; Google sends "full_name"/"name" and "avatar_url"/"picture".
+  insert into public.profiles (id, name, avatar_url)
   values (
     new.id,
-    coalesce(nullif(trim(new.raw_user_meta_data ->> 'name'), ''), split_part(new.email, '@', 1))
+    coalesce(
+      nullif(trim(new.raw_user_meta_data ->> 'name'), ''),
+      nullif(trim(new.raw_user_meta_data ->> 'full_name'), ''),
+      split_part(new.email, '@', 1)
+    ),
+    coalesce(new.raw_user_meta_data ->> 'avatar_url', new.raw_user_meta_data ->> 'picture')
   )
   on conflict (id) do nothing;
   return new;
@@ -272,6 +282,7 @@ select
   p.id,
   p.name,
   p.bio,
+  p.avatar_url,
   (select round(avg(r.s), 1) from received r where r.uid = p.id) as reputation,
   (select count(*) from received r where r.uid = p.id)::int as rating_count,
   (select count(*) from public.events e where e.host_id = p.id)::int as events_hosted,
@@ -289,6 +300,7 @@ with (security_invoker = on) as
 select
   e.*,
   ps.name as host_name,
+  ps.avatar_url as host_avatar_url,
   ps.reputation as host_reputation,
   ps.rating_count as host_rating_count,
   (
@@ -397,6 +409,264 @@ create policy "user ratings insert" on public.user_ratings
   );
 
 -- ---------------------------------------------------------------------------
+-- Photo storage: public buckets (anyone with the link can view), and each user
+-- may only upload/replace/delete files inside a folder named after their user id.
+-- ---------------------------------------------------------------------------
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values
+  ('avatars', 'avatars', true, 5242880, array['image/jpeg', 'image/png', 'image/webp']),
+  ('event-images', 'event-images', true, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update
+  set public = excluded.public,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "photos upload own folder" on storage.objects;
+create policy "photos upload own folder" on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id in ('avatars', 'event-images')
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+drop policy if exists "photos update own folder" on storage.objects;
+create policy "photos update own folder" on storage.objects
+  for update to authenticated
+  using (bucket_id in ('avatars', 'event-images') and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "photos delete own folder" on storage.objects;
+create policy "photos delete own folder" on storage.objects
+  for delete to authenticated
+  using (bucket_id in ('avatars', 'event-images') and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------------------------------------------------------------------------
+-- Friends: one row per pair. Written only through the functions below.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.friendships (
+  requester_id uuid not null references public.profiles (id) on delete cascade,
+  addressee_id uuid not null references public.profiles (id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted')),
+  created_at timestamptz not null default now(),
+  responded_at timestamptz,
+  primary key (requester_id, addressee_id),
+  check (requester_id <> addressee_id)
+);
+create unique index if not exists friendships_pair_idx
+  on public.friendships (least(requester_id, addressee_id), greatest(requester_id, addressee_id));
+create index if not exists friendships_addressee_idx on public.friendships (addressee_id);
+
+alter table public.friendships enable row level security;
+drop policy if exists "friendships readable by both" on public.friendships;
+create policy "friendships readable by both" on public.friendships
+  for select to authenticated using (auth.uid() in (requester_id, addressee_id));
+
+create or replace function public.are_friends(a uuid, b uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from public.friendships f
+    where f.status = 'accepted'
+      and least(f.requester_id, f.addressee_id) = least(a, b)
+      and greatest(f.requester_id, f.addressee_id) = greatest(a, b)
+  );
+$$;
+
+-- Sends a request, or accepts theirs if they already asked you. Returns 'pending' or 'accepted'.
+create or replace function public.send_friend_request(p_user uuid)
+returns text
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  existing public.friendships;
+begin
+  if auth.uid() is null then raise exception 'You must be signed in'; end if;
+  if p_user = auth.uid() then raise exception 'You cannot add yourself'; end if;
+
+  select * into existing from public.friendships f
+  where least(f.requester_id, f.addressee_id) = least(auth.uid(), p_user)
+    and greatest(f.requester_id, f.addressee_id) = greatest(auth.uid(), p_user)
+  for update;
+
+  if not found then
+    insert into public.friendships (requester_id, addressee_id) values (auth.uid(), p_user);
+    return 'pending';
+  end if;
+  if existing.status = 'pending' and existing.addressee_id = auth.uid() then
+    update public.friendships set status = 'accepted', responded_at = now()
+    where requester_id = existing.requester_id and addressee_id = existing.addressee_id;
+    return 'accepted';
+  end if;
+  return existing.status;
+end;
+$$;
+
+-- Accept or decline a request someone sent you.
+create or replace function public.respond_friend_request(p_requester uuid, p_accept boolean)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if p_accept then
+    update public.friendships set status = 'accepted', responded_at = now()
+    where requester_id = p_requester and addressee_id = auth.uid() and status = 'pending';
+  else
+    delete from public.friendships
+    where requester_id = p_requester and addressee_id = auth.uid() and status = 'pending';
+  end if;
+  if not found then raise exception 'Friend request not found'; end if;
+end;
+$$;
+
+-- Unfriend, or cancel a request you sent.
+create or replace function public.remove_friend(p_user uuid)
+returns void
+language sql security definer set search_path = ''
+as $$
+  delete from public.friendships f
+  where least(f.requester_id, f.addressee_id) = least(auth.uid(), p_user)
+    and greatest(f.requester_id, f.addressee_id) = greatest(auth.uid(), p_user);
+$$;
+
+revoke execute on function public.are_friends(uuid, uuid) from public, anon;
+revoke execute on function public.send_friend_request(uuid) from public, anon;
+revoke execute on function public.respond_friend_request(uuid, boolean) from public, anon;
+revoke execute on function public.remove_friend(uuid) from public, anon;
+grant execute on function public.are_friends(uuid, uuid) to authenticated;
+grant execute on function public.send_friend_request(uuid) to authenticated;
+grant execute on function public.respond_friend_request(uuid, boolean) to authenticated;
+grant execute on function public.remove_friend(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Direct messages between friends. pair_key groups both directions of a chat.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.direct_messages (
+  id bigint generated always as identity primary key,
+  sender_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
+  recipient_id uuid not null references public.profiles (id) on delete cascade,
+  pair_key text generated always as (
+    least(sender_id, recipient_id)::text || ':' || greatest(sender_id, recipient_id)::text
+  ) stored,
+  body text not null check (char_length(trim(body)) between 1 and 2000),
+  created_at timestamptz not null default now(),
+  check (sender_id <> recipient_id)
+);
+create index if not exists direct_messages_pair_idx on public.direct_messages (pair_key, created_at);
+
+alter table public.direct_messages enable row level security;
+drop policy if exists "dms readable by both" on public.direct_messages;
+create policy "dms readable by both" on public.direct_messages
+  for select to authenticated using (auth.uid() in (sender_id, recipient_id));
+drop policy if exists "dms sent to friends" on public.direct_messages;
+create policy "dms sent to friends" on public.direct_messages
+  for insert to authenticated
+  with check (sender_id = auth.uid() and public.are_friends(sender_id, recipient_id));
+
+-- ---------------------------------------------------------------------------
+-- Notifications: written by triggers, read (and marked read) by their owner.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.notifications (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  type text not null check (type in ('friend_request', 'friend_accepted', 'event_joined', 'direct_message')),
+  actor_id uuid references public.profiles (id) on delete cascade,
+  event_id uuid references public.events (id) on delete cascade,
+  body text not null,
+  read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists notifications_user_idx on public.notifications (user_id, created_at desc);
+
+alter table public.notifications enable row level security;
+drop policy if exists "notifications own" on public.notifications;
+create policy "notifications own" on public.notifications
+  for select to authenticated using (user_id = auth.uid());
+drop policy if exists "notifications mark read" on public.notifications;
+create policy "notifications mark read" on public.notifications
+  for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists "notifications clear" on public.notifications;
+create policy "notifications clear" on public.notifications
+  for delete to authenticated using (user_id = auth.uid());
+-- Only the read flag can be changed.
+revoke update on public.notifications from authenticated;
+grant update (read) on public.notifications to authenticated;
+
+create or replace function public.notify(
+  p_user uuid, p_type text, p_actor uuid, p_event uuid, p_body text
+)
+returns void
+language sql security definer set search_path = ''
+as $$
+  insert into public.notifications (user_id, type, actor_id, event_id, body)
+  values (p_user, p_type, p_actor, p_event, p_body);
+$$;
+revoke execute on function public.notify(uuid, text, uuid, uuid, text) from public, anon, authenticated;
+
+create or replace function public.profile_name(p uuid)
+returns text
+language sql stable security definer set search_path = ''
+as $$ select coalesce((select name from public.profiles where id = p), 'Someone'); $$;
+
+create or replace function public.on_friendship_change()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' then
+    perform public.notify(new.addressee_id, 'friend_request', new.requester_id, null,
+      public.profile_name(new.requester_id) || ' sent you a friend request');
+  elsif tg_op = 'UPDATE' and old.status = 'pending' and new.status = 'accepted' then
+    perform public.notify(new.requester_id, 'friend_accepted', new.addressee_id, null,
+      public.profile_name(new.addressee_id) || ' accepted your friend request');
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists friendship_notify on public.friendships;
+create trigger friendship_notify
+  after insert or update on public.friendships
+  for each row execute function public.on_friendship_change();
+
+create or replace function public.on_group_join()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  ev record;
+begin
+  select e.id, e.host_id, e.title into ev
+  from public.event_groups g join public.events e on e.id = g.event_id
+  where g.id = new.group_id;
+  if ev.host_id is not null and ev.host_id <> new.user_id then
+    perform public.notify(ev.host_id, 'event_joined', new.user_id, ev.id,
+      public.profile_name(new.user_id) || ' joined ' || ev.title);
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists group_join_notify on public.group_members;
+create trigger group_join_notify
+  after insert on public.group_members
+  for each row execute function public.on_group_join();
+
+create or replace function public.on_direct_message()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  perform public.notify(new.recipient_id, 'direct_message', new.sender_id, null,
+    public.profile_name(new.sender_id) || ': ' || left(new.body, 80));
+  return new;
+end;
+$$;
+drop trigger if exists direct_message_notify on public.direct_messages;
+create trigger direct_message_notify
+  after insert on public.direct_messages
+  for each row execute function public.on_direct_message();
+
+-- ---------------------------------------------------------------------------
 -- Realtime
 -- ---------------------------------------------------------------------------
 
@@ -404,7 +674,7 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['messages', 'events', 'group_members'] loop
+  foreach t in array array['messages', 'events', 'group_members', 'friendships', 'direct_messages', 'notifications'] loop
     if not exists (
       select 1 from pg_publication_tables
       where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t

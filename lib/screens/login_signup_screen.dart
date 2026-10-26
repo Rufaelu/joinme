@@ -6,6 +6,7 @@ import '../providers/app_state.dart';
 import '../widgets/glass_container.dart';
 import '../services/auth_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
+import '../theme/app_theme.dart';
 
 class LoginSignupScreen extends StatefulWidget {
   const LoginSignupScreen({Key? key}) : super(key: key);
@@ -40,6 +41,17 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
     final appState = context.read<AppState>();
     appState.resetEmail = _emailController.text.trim();
     appState.navigateTo('resetPassword');
+  }
+
+  Future<void> _googleSignIn() async {
+    if (_busy) return;
+    try {
+      await context.read<AppState>().auth.signInWithGoogle();
+    } on AuthException catch (e) {
+      _showMessage(e.message);
+    } catch (_) {
+      _showMessage('Could not open Google sign-in');
+    }
   }
 
   void _comingSoon() => _showMessage('Coming soon — use email for now');
@@ -101,8 +113,8 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: isDark 
-              ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)] 
-              : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+              ? [AppTheme.darkBg, AppTheme.darkBg2] 
+              : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
@@ -119,7 +131,7 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                     padding: const EdgeInsets.all(12),
                     child: Icon(
                       isDark ? LucideIcons.sun : LucideIcons.moon,
-                      color: isDark ? Colors.yellow[400] : Colors.blue[500],
+                      color: isDark ? AppTheme.primaryLight : AppTheme.accent,
                       size: 24,
                     ),
                   ),
@@ -134,23 +146,7 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                     child: Column(
                       children: [
                         // Logo
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: Colors.yellow[500],
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.yellow[600]!.withOpacity(0.5),
-                                blurRadius: 20,
-                                spreadRadius: 0,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(LucideIcons.mapPin, color: Colors.white, size: 32),
-                        ).animate(onPlay: (controller) => controller.repeat())
+                        Image.asset('assets/logo/joinme_mark.png', width: 84, height: 84).animate(onPlay: (controller) => controller.repeat())
                          .moveY(begin: 0, end: -8, duration: 1.5.seconds, curve: Curves.easeInOut)
                          .then().moveY(begin: -8, end: 0, duration: 1.5.seconds, curve: Curves.easeInOut),
                         
@@ -159,7 +155,7 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                         // Hero Text
                         ShaderMask(
                           shaderCallback: (bounds) => LinearGradient(
-                            colors: [Colors.blue[300]!, Colors.blue[400]!, Colors.blue[300]!],
+                            colors: [AppTheme.primaryLight, AppTheme.accentLight],
                           ).createShader(bounds),
                           child: Text(
                             _isLogin ? 'Welcome Back!' : 'Join the Community',
@@ -192,9 +188,9 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                           // Social Login Buttons
                           _buildSocialButton(
                             icon: LucideIcons.chrome,
-                            iconColor: Colors.blue[500]!,
+                            iconColor: AppTheme.accent,
                             text: 'Continue with Google',
-                            onTap: _comingSoon,
+                            onTap: _googleSignIn,
                           ),
                           const SizedBox(height: 12),
                           Row(
@@ -211,7 +207,7 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                               Expanded(
                                 child: _buildSocialButton(
                                   icon: LucideIcons.facebook,
-                                  iconColor: Colors.blue[600]!,
+                                  iconColor: AppTheme.accentDark,
                                   text: 'Facebook',
                                   onTap: _comingSoon,
                                 ),
@@ -254,11 +250,11 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                       duration: const Duration(milliseconds: 300),
                                       padding: const EdgeInsets.symmetric(vertical: 12),
                                       decoration: BoxDecoration(
-                                        color: _isLogin ? Colors.yellow[500] : Colors.transparent,
+                                        color: _isLogin ? AppTheme.primary : Colors.transparent,
                                         borderRadius: BorderRadius.circular(12),
                                         boxShadow: _isLogin ? [
                                           BoxShadow(
-                                            color: Colors.yellow[600]!.withOpacity(0.3),
+                                            color: AppTheme.primaryDark.withOpacity(0.3),
                                             blurRadius: 10,
                                             offset: const Offset(0, 4),
                                           )
@@ -283,11 +279,11 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                       duration: const Duration(milliseconds: 300),
                                       padding: const EdgeInsets.symmetric(vertical: 12),
                                       decoration: BoxDecoration(
-                                        color: !_isLogin ? Colors.yellow[500] : Colors.transparent,
+                                        color: !_isLogin ? AppTheme.primary : Colors.transparent,
                                         borderRadius: BorderRadius.circular(12),
                                         boxShadow: !_isLogin ? [
                                           BoxShadow(
-                                            color: Colors.yellow[600]!.withOpacity(0.3),
+                                            color: AppTheme.primaryDark.withOpacity(0.3),
                                             blurRadius: 10,
                                             offset: const Offset(0, 4),
                                           )
@@ -321,8 +317,8 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                   _buildTextField(
                                     controller: _nameController,
                                     icon: LucideIcons.user,
-                                    iconBgColor: Colors.blue[500]!.withOpacity(0.2),
-                                    iconColor: Colors.blue[400]!,
+                                    iconBgColor: AppTheme.accent.withOpacity(0.2),
+                                    iconColor: AppTheme.accentLight,
                                     placeholder: 'Full Name',
                                   ),
                                   const SizedBox(height: 16),
@@ -330,16 +326,16 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                 _buildTextField(
                                   controller: _emailController,
                                   icon: LucideIcons.mail,
-                                  iconBgColor: Colors.yellow[500]!.withOpacity(0.2),
-                                  iconColor: Colors.yellow[400]!,
+                                  iconBgColor: AppTheme.primary.withOpacity(0.2),
+                                  iconColor: AppTheme.primaryLight,
                                   placeholder: 'Email Address',
                                 ),
                                 const SizedBox(height: 16),
                                 _buildTextField(
                                   controller: _passwordController,
                                   icon: LucideIcons.lock,
-                                  iconBgColor: Colors.blue[500]!.withOpacity(0.2),
-                                  iconColor: Colors.blue[400]!,
+                                  iconBgColor: AppTheme.accent.withOpacity(0.2),
+                                  iconColor: AppTheme.accentLight,
                                   placeholder: 'Password',
                                   obscureText: !_showPassword,
                                   suffixIcon: GestureDetector(
@@ -361,7 +357,7 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                       child: Text(
                                         'Forgot password?',
                                         style: TextStyle(
-                                          color: Colors.yellow[400],
+                                          color: AppTheme.primaryLight,
                                           fontWeight: FontWeight.w500,
                                           fontSize: 14,
                                         ),
@@ -379,11 +375,11 @@ class _LoginSignupScreenState extends State<LoginSignupScreen> {
                                     width: double.infinity,
                                     padding: const EdgeInsets.symmetric(vertical: 16),
                                     decoration: BoxDecoration(
-                                      color: Colors.yellow[500],
+                                      color: AppTheme.primary,
                                       borderRadius: BorderRadius.circular(16),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.yellow[600]!.withOpacity(0.4),
+                                          color: AppTheme.primaryDark.withOpacity(0.4),
                                           blurRadius: 20,
                                           offset: const Offset(0, 10),
                                         )
