@@ -2,41 +2,38 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
+import '../models/models.dart';
+import '../services/rating_service.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/avatar.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  late Future<List<PastEvent>> _pastEvents;
+
+  @override
+  void initState() {
+    super.initState();
+    final appState = context.read<AppState>();
+    appState.loadMe();
+    _pastEvents = appState.ratings.myPastEvents();
+  }
+
+  String _date(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
-    final appState = context.watch<AppState>();
-    final user = appState.currentUser;
-
-    if (user == null) {
-      return Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: Colors.yellow[500]),
-        ),
-      );
-    }
-
-    final avatarInitials = user.fullName.isNotEmpty
-        ? user.fullName.split(' ').map((e) => e[0]).take(2).join().toUpperCase()
-        : 'US';
-
-    // Calculate real stats
-    final hostedCount = appState.events.where((e) => e.organizerId == user.uid).length;
-    final joinedCount = appState.events.where((e) => e.participantAvatars.contains(avatarInitials) && e.organizerId != user.uid).length;
-    final totalAttended = hostedCount + joinedCount;
-
-    // Filter events user is involved in
-    final userEvents = appState.events.where((e) => e.organizerId == user.uid || e.participantAvatars.contains(avatarInitials)).toList();
+    final me = context.watch<AppState>().me;
 
     return Scaffold(
       body: Container(
@@ -47,8 +44,8 @@ class ProfileScreen extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark 
-              ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)] 
-              : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+              ? [AppTheme.darkBg, AppTheme.darkBg2] 
+              : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
@@ -61,7 +58,7 @@ class ProfileScreen extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     GestureDetector(
-                      onTap: () => appState.navigateTo('map'),
+                      onTap: () => context.read<AppState>().navigateTo('map'),
                       child: GlassContainer(
                         borderRadius: 30,
                         padding: const EdgeInsets.all(12),
@@ -77,7 +74,7 @@ class ProfileScreen extends StatelessWidget {
                       ),
                     ),
                     GestureDetector(
-                      onTap: () => appState.navigateTo('profileEdit'),
+                      onTap: () => context.read<AppState>().navigateTo('profileEdit'),
                       child: GlassContainer(
                         borderRadius: 30,
                         padding: const EdgeInsets.all(12),
@@ -95,61 +92,41 @@ class ProfileScreen extends StatelessWidget {
                     children: [
                       // Avatar & Name
                       Container(
-                        width: 100,
-                        height: 100,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: user.photoUrl == null
-                              ? LinearGradient(
-                                  colors: [Colors.yellow[400]!, Colors.blue[600]!],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                )
-                              : null,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.blue[600]!.withOpacity(0.4),
+                              color: AppTheme.accentDark.withOpacity(0.4),
                               blurRadius: 20,
                               offset: const Offset(0, 10),
                             )
                           ],
                         ),
-                        child: user.photoUrl != null
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(50),
-                                child: CachedNetworkImage(
-                                  imageUrl: user.photoUrl!,
-                                  fit: BoxFit.cover,
-                                  placeholder: (context, url) => const CircularProgressIndicator(),
-                                  errorWidget: (context, url, error) => Center(
-                                    child: Text(
-                                      avatarInitials,
-                                      style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : Center(
-                                child: Text(
-                                  avatarInitials,
-                                  style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
-                                ),
-                              ),
+                        child: Avatar(name: me?.name ?? '', url: me?.avatarUrl, size: 100),
                       ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
                       const SizedBox(height: 16),
                       Text(
-                        user.fullName,
+                        me?.name ?? '',
                         style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black),
                       ).animate().fadeIn(delay: 100.ms).moveY(begin: 20, end: 0, duration: 400.ms),
+                      if (me?.bio != null && me!.bio!.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          me.bio!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+                        ),
+                      ],
                       const SizedBox(height: 32),
 
                       // Stats Row
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _buildStatItem(isDark, LucideIcons.star, '${user.reliability}%', 'Reliability', Colors.yellow[500]!),
-                          _buildStatItem(isDark, LucideIcons.calendarCheck, '$totalAttended', 'Attended', Colors.blue[400]!),
-                          _buildStatItem(isDark, LucideIcons.calendarPlus, '$hostedCount', 'Hosted', Colors.purple[400]!),
+                          _buildStatItem(isDark, LucideIcons.star, formatReputation(me?.reputation),
+                              me == null || me.ratingCount == 0 ? 'Reputation' : 'Reputation (${me.ratingCount})', AppTheme.primary),
+                          _buildStatItem(isDark, LucideIcons.calendarCheck, '${me?.eventsAttended ?? 0}', 'Attended', AppTheme.accentLight),
+                          _buildStatItem(isDark, LucideIcons.calendarPlus, '${me?.eventsHosted ?? 0}', 'Hosted', AppTheme.primaryLight),
                         ],
                       ).animate().fadeIn(delay: 200.ms).moveY(begin: 20, end: 0, duration: 400.ms),
                       const SizedBox(height: 32),
@@ -158,89 +135,95 @@ class ProfileScreen extends StatelessWidget {
                       _buildActionRow(
                         isDark: isDark,
                         icon: LucideIcons.users,
-                        iconColor: Colors.blue[400]!,
+                        iconColor: AppTheme.accentLight,
                         title: 'Friends',
-                        onTap: () => appState.navigateTo('friends'),
+                        onTap: () => context.read<AppState>().navigateTo('friends'),
                       ).animate().fadeIn(delay: 300.ms).moveY(begin: 20, end: 0, duration: 400.ms),
                       const SizedBox(height: 12),
                       _buildActionRow(
                         isDark: isDark,
                         icon: isDark ? LucideIcons.sun : LucideIcons.moon,
-                        iconColor: isDark ? Colors.yellow[400]! : Colors.blue[500]!,
+                        iconColor: isDark ? AppTheme.primaryLight : AppTheme.accent,
                         title: isDark ? 'Light Mode' : 'Dark Mode',
-                        onTap: () => appState.toggleTheme(),
+                        onTap: () => context.read<AppState>().toggleTheme(),
                       ).animate().fadeIn(delay: 400.ms).moveY(begin: 20, end: 0, duration: 400.ms),
                       
                       const SizedBox(height: 32),
                       
-                      // Active Events Section
+                      // Past Events
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Your Events',
+                          'Past Events',
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black),
                         ),
                       ).animate().fadeIn(delay: 500.ms),
                       const SizedBox(height: 16),
                       
-                      if (userEvents.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24.0),
-                          child: Text(
-                            'No active events yet.',
-                            style: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
-                          ),
-                        ).animate().fadeIn(delay: 600.ms)
-                      else
-                        ...userEvents.map((event) {
-                          final catColor = AppTheme.categoryColors[event.category]!;
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12.0),
-                            child: GestureDetector(
-                              onTap: () => appState.navigateTo('event', eventId: event.id),
-                              child: GlassContainer(
-                                padding: const EdgeInsets.all(16),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        color: catColor.primary.withOpacity(0.2),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Icon(LucideIcons.calendar, color: catColor.primary),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(event.title, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
-                                          Text(event.location.name, style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12)),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
+                      FutureBuilder<List<PastEvent>>(
+                        future: _pastEvents,
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return snapshot.hasError
+                                ? Text('Could not load past events', style: TextStyle(color: isDark ? Colors.white54 : Colors.black54))
+                                : const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator());
+                          }
+                          final past = snapshot.data!;
+                          if (past.isEmpty) {
+                            return Text('No past events yet. Join one from the map!',
+                                style: TextStyle(color: isDark ? Colors.white54 : Colors.black54));
+                          }
+                          return Column(
+                            children: past.map((event) {
+                        final catColor = AppTheme.colorsFor(event.category);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12.0),
+                          child: GlassContainer(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: catColor.primary.withOpacity(0.2),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(LucideIcons.calendar, color: catColor.primary),
                                 ),
-                              ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(event.title, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
+                                      Text(_date(event.endedAt), style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                                if (!event.rated)
+                                  GestureDetector(
+                                    onTap: () => context.read<AppState>().navigateTo('rate', eventId: event.eventId, groupId: event.groupId),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(12)),
+                                      child: const Text('Rate', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ).animate().fadeIn(delay: 600.ms).moveY(begin: 20, end: 0, duration: 400.ms);
-                        }).toList(),
+                          ),
+                        ).animate().fadeIn(delay: 600.ms).moveY(begin: 20, end: 0, duration: 400.ms);
+                            }).toList(),
+                          );
+                        },
+                      ),
                       
                       const SizedBox(height: 32),
                       
                       // Logout
                       GestureDetector(
-                        onTap: () async {
-                          try {
-                            await appState.logOut();
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed to log out: $e'), backgroundColor: Colors.red),
-                            );
-                          }
-                        },
+                        onTap: () => context.read<AppState>().auth.signOut(),
                         child: Text(
                           'Log Out',
                           style: TextStyle(color: Colors.red[400], fontWeight: FontWeight.bold, fontSize: 16),

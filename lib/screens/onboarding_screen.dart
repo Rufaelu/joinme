@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/app_state.dart';
 import '../widgets/glass_container.dart';
+import '../theme/app_theme.dart';
 
 class OnboardingScreen extends StatelessWidget {
   const OnboardingScreen({Key? key}) : super(key: key);
@@ -22,8 +23,8 @@ class OnboardingScreen extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark 
-              ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)] 
-              : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+              ? [AppTheme.darkBg, AppTheme.darkBg2] 
+              : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
@@ -40,7 +41,7 @@ class OnboardingScreen extends StatelessWidget {
                     padding: const EdgeInsets.all(12),
                     child: Icon(
                       isDark ? LucideIcons.sun : LucideIcons.moon,
-                      color: isDark ? Colors.yellow[400] : Colors.blue[500],
+                      color: isDark ? AppTheme.primaryLight : AppTheme.accent,
                       size: 24,
                     ),
                   ),
@@ -55,24 +56,7 @@ class OnboardingScreen extends StatelessWidget {
                     Stack(
                       alignment: Alignment.topRight,
                       children: [
-                        Container(
-                          width: 96,
-                          height: 96,
-                          margin: const EdgeInsets.only(bottom: 32),
-                          decoration: BoxDecoration(
-                            color: Colors.yellow[500],
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.yellow[600]!.withOpacity(0.5),
-                                blurRadius: 20,
-                                spreadRadius: 0,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(LucideIcons.mapPin, color: Colors.white, size: 48),
-                        ).animate(onPlay: (controller) => controller.repeat())
+                        Image.asset('assets/logo/joinme_mark.png', width: 120, height: 120).animate(onPlay: (controller) => controller.repeat())
                          .moveY(begin: 0, end: -10, duration: 1.5.seconds, curve: Curves.easeInOut)
                          .then().moveY(begin: -10, end: 0, duration: 1.5.seconds, curve: Curves.easeInOut),
                         
@@ -81,9 +65,9 @@ class OnboardingScreen extends StatelessWidget {
                           right: -8,
                           child: Icon(
                             LucideIcons.sparkles,
-                            color: Colors.yellow[300],
+                            color: AppTheme.primaryLight,
                             size: 32,
-                            shadows: [Shadow(color: Colors.yellow[300]!.withOpacity(0.8), blurRadius: 8)],
+                            shadows: [Shadow(color: AppTheme.primaryLight.withOpacity(0.8), blurRadius: 8)],
                           ).animate(onPlay: (controller) => controller.repeat())
                            .rotate(begin: 0, end: 1, duration: 4.seconds),
                         ),
@@ -93,7 +77,7 @@ class OnboardingScreen extends StatelessWidget {
                     // App Name
                     ShaderMask(
                       shaderCallback: (bounds) => LinearGradient(
-                        colors: [Colors.blue[300]!, Colors.blue[400]!],
+                        colors: [AppTheme.primaryLight, AppTheme.accentLight],
                       ).createShader(bounds),
                       child: const Text(
                         'JoinMe',
@@ -133,10 +117,10 @@ class OnboardingScreen extends StatelessWidget {
                               shape: BoxShape.circle,
                               gradient: LinearGradient(
                                 colors: index == 0 
-                                  ? [Colors.yellow[500]!, Colors.yellow[600]!]
+                                  ? [AppTheme.primary, AppTheme.primaryDark]
                                   : index == 1
-                                    ? [Colors.blue[400]!, Colors.blue[600]!]
-                                    : [Colors.blue[500]!, Colors.blue[700]!],
+                                    ? [AppTheme.accentLight, AppTheme.accentDark]
+                                    : [AppTheme.accent, AppTheme.accentDark],
                               ),
                               boxShadow: [
                                 BoxShadow(
@@ -162,11 +146,11 @@ class OnboardingScreen extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
                         decoration: BoxDecoration(
-                          color: Colors.yellow[500],
+                          color: AppTheme.primary,
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.yellow[600]!.withOpacity(0.3),
+                              color: AppTheme.primaryDark.withOpacity(0.3),
                               blurRadius: 20,
                               offset: const Offset(0, 10),
                             )

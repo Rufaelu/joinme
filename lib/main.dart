@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'core/config/firebase_options.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'config/supabase_config.dart';
 import 'providers/app_state.dart';
 import 'theme/app_theme.dart';
 import 'screens/login_signup_screen.dart';
@@ -17,16 +17,12 @@ import 'screens/notifications_screen.dart';
 import 'screens/messages_screen.dart';
 import 'screens/group_chat_screen.dart';
 import 'screens/direct_chat_screen.dart';
+import 'screens/rate_event_screen.dart';
+import 'screens/reset_password_screen.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  } catch (e) {
-    debugPrint('Firebase initialization failed: $e');
-  }
+  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseKey);
   runApp(
     MultiProvider(
       providers: [
@@ -47,12 +43,8 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           title: 'JoinMe',
           debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme.copyWith(
-            textTheme: GoogleFonts.interTextTheme(Theme.of(context).textTheme),
-          ),
-          darkTheme: AppTheme.darkTheme.copyWith(
-            textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
-          ),
+          theme: AppTheme.light(context),
+          darkTheme: AppTheme.dark(context),
           themeMode: appState.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           home: const AppNavigator(),
         );
@@ -68,19 +60,31 @@ class AppNavigator extends StatelessWidget {
   Widget build(BuildContext context) {
     final currentScreen = context.watch<AppState>().currentScreen;
     final selectedEventId = context.watch<AppState>().selectedEventId;
+    final selectedGroupId = context.watch<AppState>().selectedGroupId;
 
-    return Scaffold(
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: _buildScreen(currentScreen, selectedEventId),
+    // The app swaps screens itself instead of pushing routes, so handle the
+    // Android back button here: go to the previous screen, or close the app.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (!context.read<AppState>().goBack()) SystemNavigator.pop();
+      },
+      child: Scaffold(
+        body: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: _buildScreen(currentScreen, selectedEventId, selectedGroupId),
+        ),
       ),
     );
   }
 
-  Widget _buildScreen(String screen, String? eventId) {
+  Widget _buildScreen(String screen, String? eventId, String? groupId) {
     switch (screen) {
       case 'login':
         return const LoginSignupScreen();
+      case 'resetPassword':
+        return const ResetPasswordScreen();
       case 'onboarding':
         return const OnboardingScreen();
       case 'map':
@@ -88,7 +92,7 @@ class AppNavigator extends StatelessWidget {
       case 'create':
         return const CreateEventScreen();
       case 'event':
-        return EventDetailScreen(eventId: eventId);
+        return EventDetailScreen(key: ValueKey('event-$eventId'), eventId: eventId);
       case 'profile':
         return const ProfileScreen();
       case 'profileEdit':
@@ -100,7 +104,9 @@ class AppNavigator extends StatelessWidget {
       case 'messages':
         return const MessagesScreen();
       case 'chat':
-        return GroupChatScreen(eventId: eventId);
+        return GroupChatScreen(key: ValueKey('chat-$groupId'), eventId: eventId, groupId: groupId);
+      case 'rate':
+        return RateEventScreen(key: ValueKey('rate-$eventId'), eventId: eventId, groupId: groupId);
       case 'directChat':
         return const DirectChatScreen();
       default:

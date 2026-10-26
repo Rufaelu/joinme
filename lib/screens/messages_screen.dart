@@ -3,9 +3,12 @@ import 'package:provider/provider.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/app_state.dart';
-import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
+import '../services/chat_service.dart';
+import '../models/models.dart';
+import '../models/social.dart';
+import '../widgets/avatar.dart';
 import '../widgets/glass_container.dart';
+import '../theme/app_theme.dart';
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({Key? key}) : super(key: key);
@@ -17,10 +20,37 @@ class MessagesScreen extends StatefulWidget {
 class _MessagesScreenState extends State<MessagesScreen> {
   String _searchQuery = '';
   String _activeTab = 'all';
+  List<MyGroup> _groups = [];
+  List<DmThread> _threads = [];
+
+  static const _categoryEmojis = {'sports': '⚽', 'study': '📚', 'chill': '☕', 'creative': '🎨'};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGroups();
+  }
+
+  Future<void> _loadGroups() async {
+    final appState = context.read<AppState>();
+    try {
+      final groups = await appState.chat.myGroups();
+      if (mounted) setState(() => _groups = groups);
+    } catch (e) {
+      debugPrint('Loading groups failed: $e');
+    }
+    try {
+      final threads = await appState.social.threads();
+      if (mounted) setState(() => _threads = threads);
+    } catch (e) {
+      debugPrint('Loading direct chats failed: $e');
+    }
+  }
 
   String _formatTime(DateTime date) {
     final now = DateTime.now();
     final diff = now.difference(date);
+    if (diff.isNegative) return '';
     if (diff.inMinutes < 1) return 'Now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m';
     if (diff.inHours < 24) return '${diff.inHours}h';
@@ -32,50 +62,41 @@ class _MessagesScreenState extends State<MessagesScreen> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    final appState = context.watch<AppState>();
-    final user = appState.currentUser;
-    final avatarInitials = user != null && user.fullName.isNotEmpty
-        ? user.fullName.split(' ').map((e) => e[0]).take(2).join().toUpperCase()
-        : 'US';
+    final unreadFrom = <String, int>{};
+    for (final n in context.watch<AppState>().notifications) {
+      if (!n.read && n.type == 'direct_message' && n.actorId != null) {
+        unreadFrom[n.actorId!] = (unreadFrom[n.actorId!] ?? 0) + 1;
+      }
+    }
 
-    final userEvents = appState.events.where((e) =>
-        e.organizerId == user?.uid || e.participantAvatars.contains(avatarInitials)).toList();
-
-    final List<Map<String, dynamic>> mockChats = [
-      ...userEvents.map((e) => {
-        'id': e.id,
+    final List<Map<String, dynamic>> chats = [
+      ..._groups.map((g) => {
+        'id': g.groupId,
+        'eventId': g.eventId,
         'type': 'group',
-        'name': e.title,
-        'avatar': e.category == 'sports' ? '⚽' : e.category == 'study' ? '📚' : e.category == 'chill' ? '☕' : '🎨',
-        'lastMessage': '${e.host.name}: Active conversation',
-        'timestamp': e.updatedAt,
+        'name': '${g.eventTitle} · Group ${g.groupNumber}',
+        'avatar': _categoryEmojis[g.category] ?? '📍',
+        'lastMessage': g.lastMessage ?? (g.endsAt.isBefore(DateTime.now()) ? 'Event ended — rate it!' : 'No messages yet'),
+        'timestamp': g.lastAt ?? g.endsAt,
         'unreadCount': 0,
-        'category': e.category,
-        'participantCount': e.participants,
+        'category': g.category,
+        'participantCount': g.memberCount,
       }),
-      {
-        'id': 'friend-1',
+      ..._threads.map((t) => {
+        'id': t.friend.id,
         'type': 'friend',
-        'name': 'Emma Wilson',
-        'avatar': 'EW',
-        'lastMessage': 'Want to grab coffee later?',
-        'timestamp': DateTime.now().subtract(const Duration(minutes: 15)),
-        'unreadCount': 2
-      },
-      {
-        'id': 'friend-2',
-        'type': 'friend',
-        'name': 'Jake Martinez',
-        'avatar': 'JM',
-        'lastMessage': 'Thanks for the study session!',
-        'timestamp': DateTime.now().subtract(const Duration(hours: 3)),
-        'unreadCount': 0
-      },
+        'name': t.friend.name,
+        'avatar': initialsOf(t.friend.name),
+        'avatarUrl': t.friend.avatarUrl,
+        'lastMessage': t.lastMessage ?? 'Say hi 👋',
+        'timestamp': t.lastAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+        'unreadCount': unreadFrom[t.friend.id] ?? 0,
+      }),
     ];
 
-    mockChats.sort((a, b) => (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime));
+    chats.sort((a, b) => (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime));
 
-    final filteredChats = mockChats.where((chat) {
+    final filteredChats = chats.where((chat) {
       final matchesSearch = (chat['name'] as String).toLowerCase().contains(_searchQuery.toLowerCase());
       final matchesTab = _activeTab == 'all' || chat['type'] == _activeTab || (_activeTab == 'groups' && chat['type'] == 'group') || (_activeTab == 'friends' && chat['type'] == 'friend');
       return matchesSearch && matchesTab;
@@ -90,8 +111,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark 
-              ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)] 
-              : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+              ? [AppTheme.darkBg, AppTheme.darkBg2] 
+              : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
@@ -108,12 +129,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
                       child: GlassContainer(
                         borderRadius: 30,
                         padding: const EdgeInsets.all(12),
-                        child: Icon(LucideIcons.arrowLeft, color: Colors.yellow[600]),
+                        child: Icon(LucideIcons.arrowLeft, color: AppTheme.primaryDark),
                       ),
                     ),
                     ShaderMask(
                       shaderCallback: (bounds) => LinearGradient(
-                        colors: [Colors.yellow[500]!, Colors.blue[400]!],
+                        colors: [AppTheme.primary, AppTheme.accentLight],
                       ).createShader(bounds),
                       child: const Text(
                         'Messages',
@@ -172,7 +193,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(8),
                               gradient: isSelected 
-                                ? LinearGradient(colors: [Colors.yellow[500]!, Colors.blue[500]!])
+                                ? LinearGradient(colors: [AppTheme.primary, AppTheme.accent])
                                 : null,
                             ),
                             child: Center(
@@ -201,7 +222,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(LucideIcons.messageCircle, size: 64, color: Colors.yellow[600]),
+                            Icon(LucideIcons.messageCircle, size: 64, color: AppTheme.primaryDark),
                             const SizedBox(height: 16),
                             Text('No chats', style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 18, fontWeight: FontWeight.bold)),
                             const SizedBox(height: 8),
@@ -219,9 +240,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
                             child: GestureDetector(
                               onTap: () {
                                 if (chat['type'] == 'group') {
-                                  context.read<AppState>().navigateTo('chat', eventId: chat['id']);
+                                  context.read<AppState>().navigateTo('chat', eventId: chat['eventId'], groupId: chat['id']);
                                 } else {
-                                  context.read<AppState>().navigateTo('directChat');
+                                  context.read<AppState>().navigateTo('directChat', friendData: {
+                                    'id': chat['id'],
+                                    'name': chat['name'],
+                                    'avatarUrl': chat['avatarUrl'],
+                                  });
                                 }
                               },
                               child: GlassContainer(
@@ -238,15 +263,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                             shape: BoxShape.circle,
                                             gradient: chat['type'] == 'group' 
                                                 ? null 
-                                                : LinearGradient(colors: [Colors.yellow[500]!, Colors.blue[500]!]),
-                                            color: chat['type'] == 'group' ? Colors.blue[400]!.withOpacity(0.2) : null,
-                                            border: chat['type'] == 'group' ? Border.all(color: Colors.blue[400]!.withOpacity(0.4), width: 2) : null,
+                                                : LinearGradient(colors: [AppTheme.primary, AppTheme.accent]),
+                                            color: chat['type'] == 'group' ? AppTheme.accentLight.withOpacity(0.2) : null,
+                                            border: chat['type'] == 'group' ? Border.all(color: AppTheme.accentLight.withOpacity(0.4), width: 2) : null,
                                           ),
-                                          child: Center(
+                                          child: chat['type'] == 'friend'
+                                              ? Avatar(name: chat['name'] as String, url: chat['avatarUrl'] as String?, size: 56)
+                                              : Center(
                                             child: Text(
                                               chat['avatar'],
                                               style: TextStyle(
-                                                color: chat['type'] == 'group' ? Colors.blue[400] : Colors.white,
+                                                color: chat['type'] == 'group' ? AppTheme.accentLight : Colors.white,
                                                 fontSize: chat['type'] == 'group' ? 24 : 16,
                                                 fontWeight: FontWeight.bold,
                                               ),
@@ -259,9 +286,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                           child: Container(
                                             padding: const EdgeInsets.all(4),
                                             decoration: BoxDecoration(
-                                              color: chat['type'] == 'group' ? Colors.blue[500] : Colors.yellow[600],
+                                              color: chat['type'] == 'group' ? AppTheme.accent : AppTheme.primaryDark,
                                               shape: BoxShape.circle,
-                                              border: Border.all(color: isDark ? const Color(0xFF1a363d) : Colors.white, width: 2),
+                                              border: Border.all(color: isDark ? AppTheme.darkBg2 : Colors.white, width: 2),
                                             ),
                                             child: Icon(
                                               chat['type'] == 'group' ? LucideIcons.users : LucideIcons.user,
@@ -289,8 +316,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                                 ),
                                               ),
                                               Text(
-                                                _formatTime(chat['timestamp'] as DateTime),
-                                                style: TextStyle(color: Colors.yellow[600], fontSize: 12),
+                                                (chat['timestamp'] as DateTime).millisecondsSinceEpoch == 0 ? '' : _formatTime(chat['timestamp'] as DateTime),
+                                                style: TextStyle(color: AppTheme.primaryDark, fontSize: 12),
                                               ),
                                             ],
                                           ),
@@ -322,7 +349,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                       Container(
                                         padding: const EdgeInsets.all(6),
                                         decoration: BoxDecoration(
-                                          gradient: LinearGradient(colors: [Colors.yellow[500]!, Colors.blue[500]!]),
+                                          gradient: LinearGradient(colors: [AppTheme.primary, AppTheme.accent]),
                                           shape: BoxShape.circle,
                                         ),
                                         child: Text('${chat['unreadCount']}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),

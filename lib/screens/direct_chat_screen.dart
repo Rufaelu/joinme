@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import '../providers/app_state.dart';
+import '../models/social.dart';
+import '../theme/app_theme.dart';
+import '../widgets/avatar.dart';
 
+/// Live one-to-one chat with a friend (AppState.selectedFriend: id, name, avatarUrl).
 class DirectChatScreen extends StatefulWidget {
   const DirectChatScreen({Key? key}) : super(key: key);
 
@@ -14,27 +19,26 @@ class DirectChatScreen extends StatefulWidget {
 class _DirectChatScreenState extends State<DirectChatScreen> {
   final _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  String? _friendId;
+  String _friendName = '';
+  String? _friendAvatar;
+  Stream<List<DirectMessage>>? _messages;
+  int _lastCount = 0;
+  bool _sending = false;
 
-  final List<Map<String, dynamic>> _messages = [
-    {
-      'id': '1',
-      'message': 'Hey! Are you still going to the basketball game?',
-      'timestamp': '10:23 AM',
-      'isCurrentUser': false,
-    },
-    {
-      'id': '2',
-      'message': 'Yes! Should we meet up before?',
-      'timestamp': '10:25 AM',
-      'isCurrentUser': true,
-    },
-    {
-      'id': '3',
-      'message': 'Sure, how about the coffee shop near the court?',
-      'timestamp': '10:27 AM',
-      'isCurrentUser': false,
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    final appState = context.read<AppState>();
+    final friend = appState.selectedFriend;
+    _friendId = friend?['id'] as String?;
+    _friendName = friend?['name'] as String? ?? 'Friend';
+    _friendAvatar = friend?['avatarUrl'] as String?;
+    if (_friendId != null) {
+      _messages = appState.social.directMessages(_friendId!);
+      appState.social.markChatRead(_friendId!).catchError((_) {});
+    }
+  }
 
   @override
   void dispose() {
@@ -43,20 +47,8 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     super.dispose();
   }
 
-  void _sendMessage() {
-    if (_messageController.text.trim().isEmpty) return;
-    
-    setState(() {
-      _messages.add({
-        'id': DateTime.now().toString(),
-        'message': _messageController.text,
-        'timestamp': '${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
-        'isCurrentUser': true,
-      });
-      _messageController.clear();
-    });
-    
-    Future.delayed(const Duration(milliseconds: 100), () {
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
@@ -67,10 +59,36 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     });
   }
 
+  Future<void> _send() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty || _friendId == null || _sending) return;
+    if (text.length > 2000) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Message is too long (max 2000 characters)')));
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      await context.read<AppState>().social.sendDirect(_friendId!, text);
+      if (!mounted) return;
+      _messageController.clear();
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is PostgrestException && e.code == '42501'
+          ? 'You can only message friends'
+          : 'Message not sent. Check your connection.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  String _time(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final appState = context.watch<AppState>();
+    final myId = appState.auth.userId;
 
     return Scaffold(
       body: Container(
@@ -80,9 +98,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: isDark 
-              ? [const Color(0xFF0d1b1e), const Color(0xFF1a363d)] 
-              : [const Color(0xFFf9fafb), const Color(0xFFe5e7eb)],
+            colors: isDark ? [AppTheme.darkBg, AppTheme.darkBg2] : [AppTheme.lightBg, AppTheme.lightBg2],
           ),
         ),
         child: SafeArea(
@@ -92,7 +108,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
               Container(
                 decoration: BoxDecoration(
                   color: isDark ? Colors.black26 : Colors.white60,
-                  border: Border(bottom: BorderSide(color: Colors.blue[500]!.withOpacity(0.3), width: 2)),
+                  border: Border(bottom: BorderSide(color: AppTheme.primary.withOpacity(0.3), width: 2)),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                 child: Row(
@@ -106,101 +122,64 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                       ),
                     ),
                     const SizedBox(width: 16),
+                    Avatar(name: _friendName, url: _friendAvatar, size: 40),
+                    const SizedBox(width: 12),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Emma Wilson', style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
-                          Text('Online', style: TextStyle(color: Colors.blue[400], fontSize: 12)),
-                        ],
+                      child: Text(
+                        _friendName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
                       ),
-                    ),
-                    Row(
-                      children: [
-                        Icon(LucideIcons.phone, color: Colors.blue[500]),
-                        const SizedBox(width: 16),
-                        Icon(LucideIcons.video, color: Colors.blue[500]),
-                        const SizedBox(width: 16),
-                        Icon(LucideIcons.moreVertical, color: isDark ? Colors.white54 : Colors.black54),
-                      ],
                     ),
                   ],
                 ),
               ),
 
-              // Messages Area
               Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = _messages[index];
-                    final isMe = msg['isCurrentUser'] as bool;
-                    
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: Row(
-                        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (!isMe) ...[
-                            Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(colors: [Colors.yellow[500]!, Colors.blue[500]!]),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Center(child: Text('EW', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold))),
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-                          Flexible(
-                            child: Column(
-                              crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: isMe ? Colors.blue[500] : (isDark ? Colors.white10 : Colors.black12),
-                                    borderRadius: BorderRadius.only(
-                                      topLeft: const Radius.circular(16),
-                                      topRight: const Radius.circular(16),
-                                      bottomLeft: isMe ? const Radius.circular(16) : const Radius.circular(4),
-                                      bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(16),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    msg['message'],
-                                    style: TextStyle(color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black)),
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4, right: 4),
-                                  child: Text(msg['timestamp'], style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 10)),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ).animate().fadeIn().moveY(begin: 10, end: 0),
-                    );
-                  },
-                ),
+                child: _messages == null
+                    ? const Center(child: Text('Chat not found'))
+                    : StreamBuilder<List<DirectMessage>>(
+                        stream: _messages,
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return Center(
+                              child: Text('Could not load messages',
+                                  style: TextStyle(color: isDark ? Colors.white54 : Colors.black54)),
+                            );
+                          }
+                          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                          final messages = snapshot.data!;
+                          if (messages.length != _lastCount) {
+                            _lastCount = messages.length;
+                            _scrollToBottom();
+                            if (_friendId != null) appState.social.markChatRead(_friendId!).catchError((_) {});
+                          }
+                          if (messages.isEmpty) {
+                            return Center(
+                              child: Text('Say hi to ${_friendName.split(' ').first} 👋',
+                                  style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 15)),
+                            );
+                          }
+                          return ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(16),
+                            itemCount: messages.length,
+                            itemBuilder: (context, i) => _bubble(messages[i], messages[i].senderId == myId, isDark),
+                          );
+                        },
+                      ),
               ),
 
-              // Input Area
+              // Input
               Container(
                 decoration: BoxDecoration(
                   color: isDark ? Colors.black26 : Colors.white60,
-                  border: Border(top: BorderSide(color: Colors.blue[500]!.withOpacity(0.3), width: 2)),
+                  border: Border(top: BorderSide(color: AppTheme.primary.withOpacity(0.3), width: 2)),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                 child: Row(
                   children: [
-                    Icon(LucideIcons.image, color: isDark ? Colors.white54 : Colors.black54),
-                    const SizedBox(width: 16),
                     Expanded(
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -211,22 +190,27 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                         child: TextField(
                           controller: _messageController,
                           style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                          textInputAction: TextInputAction.send,
+                          minLines: 1,
+                          maxLines: 4,
                           decoration: InputDecoration(
                             hintText: 'Type a message...',
                             hintStyle: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
                             border: InputBorder.none,
                           ),
-                          onSubmitted: (_) => _sendMessage(),
+                          onSubmitted: (_) => _send(),
                         ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     GestureDetector(
-                      onTap: _sendMessage,
+                      onTap: _send,
                       child: Container(
                         padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.blue[500], shape: BoxShape.circle),
-                        child: const Icon(LucideIcons.send, color: Colors.white, size: 20),
+                        decoration: const BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle),
+                        child: _sending
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(LucideIcons.send, color: Colors.white, size: 20),
                       ),
                     ),
                   ],
@@ -237,5 +221,36 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
         ),
       ).animate().slideX(begin: 1, end: 0, duration: 400.ms, curve: Curves.easeOutQuad),
     );
+  }
+
+  Widget _bubble(DirectMessage msg, bool isMe, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: isMe ? AppTheme.primary : (isDark ? Colors.white10 : Colors.black12),
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(16),
+                  topRight: const Radius.circular(16),
+                  bottomLeft: isMe ? const Radius.circular(16) : const Radius.circular(4),
+                  bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(16),
+                ),
+              ),
+              child: Text(msg.body, style: TextStyle(color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black))),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
+            child: Text(_time(msg.createdAt), style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 10)),
+          ),
+        ],
+      ),
+    ).animate().fadeIn().moveY(begin: 10, end: 0);
   }
 }
