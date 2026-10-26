@@ -4,7 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
+import '../services/chat_service.dart';
 import '../widgets/glass_container.dart';
 
 class MessagesScreen extends StatefulWidget {
@@ -17,10 +17,29 @@ class MessagesScreen extends StatefulWidget {
 class _MessagesScreenState extends State<MessagesScreen> {
   String _searchQuery = '';
   String _activeTab = 'all';
+  List<MyGroup> _groups = [];
+
+  static const _categoryEmojis = {'sports': '⚽', 'study': '📚', 'chill': '☕', 'creative': '🎨'};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGroups();
+  }
+
+  Future<void> _loadGroups() async {
+    try {
+      final groups = await context.read<AppState>().chat.myGroups();
+      if (mounted) setState(() => _groups = groups);
+    } catch (e) {
+      debugPrint('Loading groups failed: $e');
+    }
+  }
 
   String _formatTime(DateTime date) {
     final now = DateTime.now();
     final diff = now.difference(date);
+    if (diff.isNegative) return '';
     if (diff.inMinutes < 1) return 'Now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m';
     if (diff.inHours < 24) return '${diff.inHours}h';
@@ -33,16 +52,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     final List<Map<String, dynamic>> mockChats = [
-      ...mockEvents.take(5).map((e) => {
-        'id': e.id,
+      ..._groups.map((g) => {
+        'id': g.groupId,
+        'eventId': g.eventId,
         'type': 'group',
-        'name': e.title,
-        'avatar': '⚽', // Simplify for demo
-        'lastMessage': '${e.host.name}: See you there!',
-        'timestamp': DateTime.now().subtract(Duration(minutes: (e.id.hashCode % 60))),
-        'unreadCount': e.id.hashCode % 3,
-        'category': e.category,
-        'participantCount': e.participants,
+        'name': '${g.eventTitle} · Group ${g.groupNumber}',
+        'avatar': _categoryEmojis[g.category] ?? '📍',
+        'lastMessage': g.lastMessage ?? (g.endsAt.isBefore(DateTime.now()) ? 'Event ended — rate it!' : 'No messages yet'),
+        'timestamp': g.lastAt ?? g.endsAt,
+        'unreadCount': 0,
+        'category': g.category,
+        'participantCount': g.memberCount,
       }),
       {
         'id': 'friend-1',
@@ -210,7 +230,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                             child: GestureDetector(
                               onTap: () {
                                 if (chat['type'] == 'group') {
-                                  context.read<AppState>().navigateTo('chat', eventId: chat['id']);
+                                  context.read<AppState>().navigateTo('chat', eventId: chat['eventId'], groupId: chat['id']);
                                 } else {
                                   context.read<AppState>().navigateTo('directChat');
                                 }

@@ -62,16 +62,17 @@ class AppNavigator extends StatelessWidget {
   Widget build(BuildContext context) {
     final currentScreen = context.watch<AppState>().currentScreen;
     final selectedEventId = context.watch<AppState>().selectedEventId;
+    final selectedGroupId = context.watch<AppState>().selectedGroupId;
 
     return Scaffold(
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
-        child: _buildScreen(currentScreen, selectedEventId),
+        child: _buildScreen(currentScreen, selectedEventId, selectedGroupId),
       ),
     );
   }
 
-  Widget _buildScreen(String screen, String? eventId) {
+  Widget _buildScreen(String screen, String? eventId, String? groupId) {
     switch (screen) {
       case 'login':
         return const LoginSignupScreen();
@@ -82,7 +83,7 @@ class AppNavigator extends StatelessWidget {
       case 'create':
         return const CreateEventScreen();
       case 'event':
-        return EventDetailScreen(eventId: eventId);
+        return EventDetailScreen(key: ValueKey('event-$eventId'), eventId: eventId);
       case 'profile':
         return const ProfileScreen();
       case 'profileEdit':
@@ -94,7 +95,7 @@ class AppNavigator extends StatelessWidget {
       case 'messages':
         return const MessagesScreen();
       case 'chat':
-        return GroupChatScreen(eventId: eventId);
+        return GroupChatScreen(key: ValueKey('chat-$groupId'), eventId: eventId, groupId: groupId);
       case 'directChat':
         return const DirectChatScreen();
       default:

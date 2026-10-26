@@ -4,15 +4,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 import '../services/auth_service.dart';
 import '../services/event_service.dart';
+import '../services/chat_service.dart';
+import '../services/rating_service.dart';
 
 class AppState extends ChangeNotifier {
   final AuthService auth = AuthService();
   final EventService eventService = EventService();
+  final ChatService chat = ChatService();
+  final RatingService ratings = RatingService();
   late final StreamSubscription<AuthState> _authSub;
 
   bool _isDarkMode = true;
   late String _currentScreen;
   String? _selectedEventId;
+  String? _selectedGroupId;
   Map<String, dynamic>? _selectedFriend;
   Profile? _me;
 
@@ -45,6 +50,7 @@ class AppState extends ChangeNotifier {
   bool get isDarkMode => _isDarkMode;
   String get currentScreen => _currentScreen;
   String? get selectedEventId => _selectedEventId;
+  String? get selectedGroupId => _selectedGroupId;
   Map<String, dynamic>? get selectedFriend => _selectedFriend;
   bool get isPickingLocation => _isPickingLocation;
   PickedLocation? get pickedLocation => _pickedLocation;
@@ -125,8 +131,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void navigateTo(String screen, {String? eventId, Map<String, dynamic>? friendData}) {
+  void navigateTo(String screen, {String? eventId, String? groupId, Map<String, dynamic>? friendData}) {
     if (eventId != null) _selectedEventId = eventId;
+    if (groupId != null) _selectedGroupId = groupId;
     if (friendData != null) _selectedFriend = friendData;
     _currentScreen = screen;
     notifyListeners();
