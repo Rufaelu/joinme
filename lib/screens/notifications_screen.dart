@@ -147,7 +147,7 @@ class NotificationsScreen extends StatelessWidget {
                             padding: const EdgeInsets.only(bottom: 12),
                             child: GestureDetector(
                               onTap: () {
-                                if (!n.read) appState.social.markAllRead();
+                                if (!n.read) appState.social.markRead(n.id);
                                 _open(context, n);
                               },
                               child: GlassContainer(

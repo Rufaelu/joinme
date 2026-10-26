@@ -359,6 +359,10 @@ class _MapScreenState extends State<MapScreen> {
         ? null
         : shown.where((e) => e.id == _selectedEvent!.id).firstOrNull;
     
+    // The map tiles are light in both themes, so in dark mode the overlays
+    // need a dark tint to stay readable (the default dark glass is near-clear).
+    final overlayBg = isDark ? AppTheme.darkBg2.withValues(alpha: 0.85) : null;
+
     return Scaffold(
       body: Stack(
         children: [
@@ -379,24 +383,11 @@ class _MapScreenState extends State<MapScreen> {
                 onLongPress: _handleLongPress,
               ),
             children: [
-              if (isDark)
-                ColorFiltered(
-                  colorFilter: const ColorFilter.matrix([
-                    -1,  0,  0, 0, 255,
-                     0, -1,  0, 0, 255,
-                     0,  0, -1, 0, 255,
-                     0,  0,  0, 1,   0,
-                  ]),
-                  child: TileLayer(
-                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.joinme.app',
-                  ),
-                )
-              else
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.joinme.app',
-                ),
+              // Same light OSM tiles in both themes.
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.joinme.app',
+              ),
               MarkerLayer(
                 markers: shown.map((event) {
                   final isSelected = _selectedEvent?.id == event.id;
@@ -467,6 +458,7 @@ class _MapScreenState extends State<MapScreen> {
                 behavior: HitTestBehavior.opaque,
                 onTap: () => context.read<AppState>().toggleTheme(),
                 child: GlassContainer(
+                  backgroundColor: overlayBg,
                   borderRadius: 30,
                   padding: const EdgeInsets.all(12),
                   child: Icon(
@@ -485,6 +477,7 @@ class _MapScreenState extends State<MapScreen> {
             right: 0,
             child: Center(
               child: GlassContainer(
+                backgroundColor: overlayBg,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 borderRadius: 30,
                 child: const JoinMeLogo(size: 30),
@@ -498,6 +491,7 @@ class _MapScreenState extends State<MapScreen> {
             left: 16,
             right: 16,
             child: GlassContainer(
+              backgroundColor: overlayBg,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Row(
                 children: [

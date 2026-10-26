@@ -141,17 +141,29 @@ class SocialService {
         .map((rows) => rows.map(AppNotification.fromMap).toList());
   }
 
-  Future<void> markAllRead() =>
-      _db.from('notifications').update({'read': true}).eq('user_id', _me).eq('read', false);
+  // These await the query instead of returning it: Supabase query builders only
+  // send the request once awaited, and callers fire these without awaiting.
+
+  Future<void> markRead(int notificationId) async {
+    await _db.from('notifications').update({'read': true}).eq('id', notificationId);
+  }
+
+  Future<void> markAllRead() async {
+    await _db.from('notifications').update({'read': true}).eq('user_id', _me).eq('read', false);
+  }
 
   /// Marks message notifications from [friendId] read (when their chat is opened).
-  Future<void> markChatRead(String friendId) => _db
-      .from('notifications')
-      .update({'read': true})
-      .eq('user_id', _me)
-      .eq('actor_id', friendId)
-      .eq('type', 'direct_message')
-      .eq('read', false);
+  Future<void> markChatRead(String friendId) async {
+    await _db
+        .from('notifications')
+        .update({'read': true})
+        .eq('user_id', _me)
+        .eq('actor_id', friendId)
+        .eq('type', 'direct_message')
+        .eq('read', false);
+  }
 
-  Future<void> clearAll() => _db.from('notifications').delete().eq('user_id', _me);
+  Future<void> clearAll() async {
+    await _db.from('notifications').delete().eq('user_id', _me);
+  }
 }
