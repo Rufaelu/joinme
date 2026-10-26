@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Video build workspace (frames, scripts). The final video lives in demo/.
+/brag-output*/
